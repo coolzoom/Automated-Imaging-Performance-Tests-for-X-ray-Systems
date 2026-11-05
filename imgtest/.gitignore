@@ -1,0 +1,6 @@
+.venv/
+out/
+bin/
+obj/
+TestResults/
+config.json
