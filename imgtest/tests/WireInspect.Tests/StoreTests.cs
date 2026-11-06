@@ -17,12 +17,12 @@ public class StoreTests
         using var gray = Synthetic.Make();
         var p = Synthetic.MakeProduct(gray);
         p.Name = "型号 A/1";
-        p.PixelUm = 7.5;
+        p.CorridorPx = 7.5;
         p.Save(tmp.Path);
         Assert.Equal(["型号 A_1"], Product.List(tmp.Path));
         var q = Product.Load(Path.Combine(tmp.Path, "型号 A_1"));
         Assert.Equal("型号 A/1", q.Name);
-        Assert.Equal(7.5, q.PixelUm);
+        Assert.Equal(7.5, q.CorridorPx);
         Assert.Equal(2, q.Wires.Count);
         Assert.Equal([Synthetic.UnitW, Synthetic.UnitH], q.TplSize);
         Assert.Equal(Synthetic.UnitW, q.Template!.Width);

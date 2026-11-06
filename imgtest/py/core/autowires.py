@@ -1,11 +1,10 @@
-"""Semi-automatic product setup: find the wires inside a unit template, calibrate the pixel size
-(same steps as the C# AutoWires)."""
+"""Semi-automatic product setup: find the wires inside a unit template (same steps as the C# AutoWires)."""
 import math
 
 import cv2
 import numpy as np
 
-from .inspect import FImage, ball_score, find_units, inspect_wire
+from .inspect import FImage, ball_score, inspect_wire
 from .product import Wire
 
 
@@ -172,7 +171,7 @@ def auto_wires(tpl8, product):
     lines = cv2.HoughLinesP(mask, 1, math.pi / 180, int(max(10, min_len / 2)), minLineLength=min_len,
                             maxLineGap=max(3, a.along))
     segs = [tuple(float(v) for v in l) for l in lines.reshape(-1, 4)] if lines is not None else []
-    wire_px = product.px(product.wire_diam_um)
+    wire_px = product.wire_width_px
     merged = [s for s in _merge(segs, max(3, 2 * wire_px), max(6, 2 * a.along)) if _seg_len(s) >= min_len]
 
     fimg = FImage(img)
@@ -203,15 +202,3 @@ def auto_wires(tpl8, product):
     out.sort(key=lambda w: (round((w.p1[1] + w.p2[1]) / 2 / 10), (w.p1[0] + w.p2[0]) / 2))
     return out[:64]
 
-
-def calibrate_pitch(gray8, tpl8, match_thr, pitch_mm):
-    """µm per pixel from the known horizontal unit pitch (mm): median spacing of side-by-side units."""
-    units = find_units(gray8, tpl8, match_thr)
-    th = tpl8.shape[0]
-    dx = []
-    for u in units:
-        right = [v['box'][0] - u['box'][0] for v in units
-                 if v['box'][0] > u['box'][0] and abs(v['box'][1] - u['box'][1]) < th / 2.0]
-        if right:
-            dx.append(min(right))
-    return None if not dx or pitch_mm <= 0 else pitch_mm * 1000 / float(np.median(dx))

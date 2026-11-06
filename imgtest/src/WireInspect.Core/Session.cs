@@ -15,7 +15,7 @@ public sealed class ImageRecord
     public int Width { get; set; }
     public int Height { get; set; }
     public string? Product { get; set; }
-    public double PixelUm { get; set; }
+    public double Angle { get; set; }
     public List<UnitResult>? Units { get; set; }
     public List<WireResult>? Wires { get; set; }
 }
@@ -84,7 +84,7 @@ public sealed class Session
         r.Width = res.Width;
         r.Height = res.Height;
         r.Product = res.Product;
-        r.PixelUm = res.PixelUm;
+        r.Angle = res.Angle;
         r.Units = res.Units;
         r.Wires = res.Wires;
         r.DetectedAt = Now();
@@ -108,6 +108,7 @@ public sealed class Session
             var r = Rec(rel);
             r.Defects = [];
             r.DetectedAt = r.Error = r.Product = null;
+            r.Angle = 0;
             r.Units = null;
             r.Wires = null;
             if (verdicts) (r.Verdict, r.Reviewer, r.ReviewedAt) = (null, "", "");
@@ -145,7 +146,7 @@ public sealed class Session
     {
         var r = Peek(rel);
         if (r?.DetectedAt == null) return Unchecked;
-        if (r.Error != null) return Suspect;
+        if (r.Error != null || r.Units is not { Count: > 0 }) return Suspect;   // no unit found: wrong product, or the picture needs a look
         return LiveDefects(rel).Count > 0 ? Suspect : AutoOk;
     }
 
@@ -188,24 +189,23 @@ public static class CsvReport
     /// <summary>Folder report: one row per image (summary) and one row per wire (details file).</summary>
     public static (string summary, string details) Write(Session s, string summaryPath)
     {
-        var sum = new List<string> { Row("文件", "状态", "判定", "判定人", "判定时间", "产品", "像素µm", "单元数", "导线数", "NG导线",
+        var sum = new List<string> { Row("文件", "状态", "判定", "判定人", "判定时间", "产品", "单元方向°", "单元数", "导线数", "NG导线",
             "有效缺陷数", "缺陷类型", "备注", "检测时间", "错误") };
-        var det = new List<string> { Row("文件", "单元", "线", "结果", "z", "z_ball", "长度µm", "sweep%", "sweep µm", "端点偏移µm",
-            "起点缺口µm", "终点缺口µm", "焊点1x", "焊点1y", "焊点2x", "焊点2y") };
+        var det = new List<string> { Row("文件", "单元", "线", "单元角度°", "结果", "z", "z_ball", "长度px", "sweep%", "sweep px", "端点偏移px",
+            "起点缺口px", "终点缺口px", "焊点1x", "焊点1y", "焊点2x", "焊点2y") };
         foreach (var rel in s.Files)
         {
             var r = s.Rec(rel);
             var live = s.LiveDefects(rel);
             var wires = r.Wires ?? [];
-            double um = r.PixelUm > 0 ? r.PixelUm : 1;
             sum.Add(Row(rel, Session.StatusText[s.Status(rel)], r.Verdict ?? "", r.Reviewer, r.ReviewedAt, r.Product ?? "",
-                r.PixelUm > 0 ? r.PixelUm : "", r.Units?.Count ?? 0, wires.Count, wires.Count(w => w.Bad), live.Count,
+                r.Angle != 0 ? r.Angle.ToString("F1") : "", r.Units?.Count ?? 0, wires.Count, wires.Count(w => w.Bad), live.Count,
                 string.Join("、", live.GroupBy(d => d.Type).Select(g => $"{g.Key}×{g.Count()}")), r.Comment,
                 r.DetectedAt ?? "", r.Error ?? ""));
             foreach (var w in wires)
-                det.Add(Row(rel, w.Unit + 1, w.Index + 1, w.Bad ? FlagText(w.Flags) : "正常", w.ZAll.ToString("F1"),
-                    w.ZBall.ToString("F1"), (w.L * um).ToString("F0"), w.SweepPct.ToString("F1"), (w.SweepPx * um).ToString("F1"),
-                    (w.ShiftPx * um).ToString("F1"), (w.Gap1 * um).ToString("F0"), (w.Gap2 * um).ToString("F0"),
+                det.Add(Row(rel, w.Unit + 1, w.Index + 1, (r.Units != null && w.Unit < r.Units.Count ? r.Units[w.Unit].Angle : 0).ToString("F1"), w.Bad ? FlagText(w.Flags) : "正常", w.ZAll.ToString("F1"),
+                    w.ZBall.ToString("F1"), w.L.ToString("F0"), w.SweepPct.ToString("F1"), w.SweepPx.ToString("F1"),
+                    w.ShiftPx.ToString("F1"), w.Gap1.ToString("F0"), w.Gap2.ToString("F0"),
                     w.Ball[0].ToString("F1"), w.Ball[1].ToString("F1"), w.P2[0].ToString("F1"), w.P2[1].ToString("F1")));
         }
         var detailsPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(summaryPath))!,
@@ -218,11 +218,10 @@ public static class CsvReport
     /// <summary>Wires of one image (the 「导线统计」 export).</summary>
     public static void WriteWires(string path, ImageRecord r)
     {
-        double um = r.PixelUm > 0 ? r.PixelUm : 1;
-        var lines = new List<string> { Row("单元", "线", "起点x", "起点y", "终点x", "终点y", "长度µm", "sweep%", "端点偏移µm", "z", "判定") };
+        var lines = new List<string> { Row("单元", "线", "起点x", "起点y", "终点x", "终点y", "长度px", "sweep%", "端点偏移px", "z", "判定") };
         foreach (var w in r.Wires ?? [])
             lines.Add(Row(w.Unit + 1, w.Index + 1, w.P1[0].ToString("F1"), w.P1[1].ToString("F1"), w.P2[0].ToString("F1"),
-                w.P2[1].ToString("F1"), (w.L * um).ToString("F0"), w.SweepPct.ToString("F1"), (w.ShiftPx * um).ToString("F1"),
+                w.P2[1].ToString("F1"), w.L.ToString("F0"), w.SweepPct.ToString("F1"), w.ShiftPx.ToString("F1"),
                 w.ZAll.ToString("F1"), w.Bad ? FlagText(w.Flags) : "正常"));
         File.WriteAllLines(path, lines, Bom);
     }

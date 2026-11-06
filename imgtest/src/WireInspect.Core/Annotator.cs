@@ -19,8 +19,10 @@ public static class Annotator
             var wires = res.Wires.Where(w => w.Unit == u.Index).ToList();
             var bad = wires.Where(w => w.Bad).ToList();
             var col = bad.Count == 0 ? ok : ng;
-            int x = u.Box[0], y = u.Box[1], bw = u.Box[2], bh = u.Box[3];
-            Cv2.Rectangle(vis, S(x, y), S(x + bw, y + bh), col, 2);
+            int bh = u.Box[3];
+            var m = u.Map();
+            Cv2.Polylines(vis, [u.Corners().Select(c => S(c.x, c.y)).ToArray()], true, col, 2);
+            var (x, y) = Align.Apply(m, 0, 0);
             foreach (var w in wires)
             {
                 if (w.Flags.Contains("MISSING"))

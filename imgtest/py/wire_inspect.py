@@ -2,8 +2,8 @@
 """Bond-wire X-ray inspection, command line (same commands and CSV as the C# wireinspect).
 
   wire_inspect.py [detect] <图片> [--product 名称] [--out 目录] [--simulate 缺线单元 断线单元 弯线单元]
-                  [--sim-sweep-px 5] [--json 结果.json]
-  wire_inspect.py make-product --image <图片> --box x,y,w,h --name 名称 [--pixel-um 10] [--wire x1,y1,x2,y2 ...] [--auto]
+                  [--sim-sweep-px 5] [--rotate 度] [--json 结果.json]
+  wire_inspect.py make-product --image <图片> --box x,y,w,h --name 名称 [--wire x1,y1,x2,y2 ...] [--auto]
   wire_inspect.py list
 """
 import argparse
@@ -14,6 +14,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from core.align import rotate_inscribed  # noqa: E402
 from core.autowires import auto_wires  # noqa: E402
 from core.config import PRODUCTS_DIR, ROOT, load_config  # noqa: E402
 from core.imgio import read_gray, write_png  # noqa: E402
@@ -44,10 +45,15 @@ def cmd_detect(a):
         gray = simulate(gray, product, units, *a.simulate, a.sim_sweep_px)
         stem += '_sim'
         write_png(os.path.join(a.out, stem + '.png'), gray)
+    if a.rotate:
+        gray = rotate_inscribed(gray, a.rotate)
+        stem += '_rot'
+        write_png(os.path.join(a.out, stem + '.png'), gray)
     t0 = time.perf_counter()
     res = detect(gray, product)
     ms = (time.perf_counter() - t0) * 1000
-    print('产品 %s  单元 %d  导线 %d  用时 %d ms' % (product.name, len(res['units']), len(res['wires']), ms))
+    print('产品 %s  单元 %d  导线 %d  旋转 %.1f°  用时 %d ms' % (product.name, len(res['units']), len(res['wires']),
+                                                       res['angle'], ms))
     lines = [CSV_HEAD]
     for w in res['wires']:
         row = csv_row(w, res['units'][w['unit']])
@@ -66,7 +72,7 @@ def cmd_detect(a):
 def cmd_make_product(a):
     gray = read_gray(a.image)
     x, y, w, h = (int(v) for v in a.box.split(','))
-    p = Product(name=a.name, pixel_um=a.pixel_um, template=gray[y:y + h, x:x + w].copy())
+    p = Product(name=a.name, template=gray[y:y + h, x:x + w].copy())
     if a.wire:
         for s in a.wire:
             v = [float(c) for c in s.split(',')]
@@ -91,12 +97,12 @@ def main(argv=None):
     d.add_argument('--out', default=os.path.join(ROOT, 'out'))
     d.add_argument('--simulate', nargs=3, type=int, metavar=('MISS', 'BROKEN', 'SWEEP'))
     d.add_argument('--sim-sweep-px', type=float, default=5.0)
+    d.add_argument('--rotate', type=float, default=0.0, help='测试用：先把图片旋转这么多度（逆时针，裁掉空白角）再检测')
     d.add_argument('--json', help='同时把完整结果（全精度）写成 JSON')
     m = sub.add_parser('make-product')
     m.add_argument('--image', required=True)
     m.add_argument('--box', required=True)
     m.add_argument('--name', required=True)
-    m.add_argument('--pixel-um', type=float, default=10.0)
     m.add_argument('--wire', nargs='+')
     m.add_argument('--auto', action='store_true')
     sub.add_parser('list')
