@@ -45,11 +45,7 @@ public static class Bitmaps
 }
 
 public sealed record WireMark(IReadOnlyList<Point> Pts, Color Color, double Width, string Tip, int Index, string? Label = null, bool Dashed = false);
-/// <summary>A unit outline on the image (a quadrilateral: rotated / distorted units are not upright).</summary>
-public sealed record UnitMark(IReadOnlyList<Point> Corners, Color Color, string Label)
-{
-    public static UnitMark Of(UnitResult u, Color color, string label) => new(u.Corners().Select(c => new Point(c.x, c.y)).ToList(), color, label);
-}
+public sealed record UnitMark(Rect Box, Color Color, string Label);
 public sealed record DotMark(Point Center, double Radius, Color Color);
 
 /// <summary>Zoom / pan image view with vector overlays (units, wires, bond points, defect boxes), box
@@ -187,15 +183,8 @@ public sealed class ImageViewer : Control
             ctx.DrawRectangle(null, MakePen(Color.Parse("#1f9fff"), 2, true), ToScreen(tb));
         foreach (var u in Units)
         {
-            var poly = new StreamGeometry();
-            using (var g = poly.Open())
-            {
-                g.BeginFigure(ToScreen(u.Corners[0]), false);
-                foreach (var c in u.Corners.Skip(1)) g.LineTo(ToScreen(c));
-                g.EndFigure(true);
-            }
-            ctx.DrawGeometry(null, MakePen(u.Color, 1.5, true), poly);
-            var tl = ToScreen(u.Corners[0]);
+            ctx.DrawRectangle(null, MakePen(u.Color, 1.5, true), ToScreen(u.Box));
+            var tl = ToScreen(u.Box.TopLeft);
             Text(ctx, u.Label, new Point(tl.X + 5, tl.Y + 3), u.Color, 11, badge: true);
         }
         for (int i = 0; i < Wires.Count; i++)

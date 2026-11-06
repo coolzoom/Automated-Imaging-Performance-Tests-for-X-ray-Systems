@@ -11,7 +11,7 @@ UNCHECKED, AUTO_OK, SUSPECT, PASS, FAIL = 'unchecked', 'ok', 'suspect', 'PASS', 
 STATUS_TEXT = {UNCHECKED: '未检测', AUTO_OK: '未检出候选（待复核）', SUSPECT: '疑似缺陷', PASS: 'PASS', FAIL: 'FAIL'}
 STATUS_COLORS = {UNCHECKED: '#9a9a9a', AUTO_OK: '#7fc8a0', SUSPECT: '#ff9900', PASS: '#18a848', FAIL: '#e02424'}
 REVIEWED = ('accepted', 'rejected')
-_RESULT_KEYS = ('detected_at', 'error', 'product', 'angle', 'units', 'wires')
+_RESULT_KEYS = ('detected_at', 'error', 'product', 'units', 'wires')
 
 
 def now():
@@ -56,8 +56,8 @@ class Session:
         keep = [d for d in r['defects'] if d.get('source') == 'manual' or d.get('status') in REVIEWED]
         reviewed = [d for d in keep if d.get('status') in REVIEWED]
         r['defects'] = keep + [d for d in res['defects'] if not any(overlaps(d, k) for k in reviewed)]
-        for k in ('width', 'height', 'product', 'angle', 'units', 'wires'):
-            r[k] = res.get(k)
+        for k in ('width', 'height', 'product', 'pixel_um', 'units', 'wires'):
+            r[k] = res[k]
         r['detected_at'] = now()
         r.pop('error', None)
         self.dirty = True
@@ -102,7 +102,7 @@ class Session:
         r = self._peek(rel)
         if not r or not r.get('detected_at'):
             return UNCHECKED
-        if r.get('error') or not r.get('units'):   # no unit found: wrong product, or the picture needs a look
+        if r.get('error'):
             return SUSPECT
         return SUSPECT if self.live_defects(rel) else AUTO_OK
 

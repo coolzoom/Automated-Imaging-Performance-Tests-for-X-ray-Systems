@@ -6,21 +6,8 @@ namespace WireInspect.Core;
 public sealed class UnitResult
 {
     public int Index { get; set; }
-    public int[] Box { get; set; } = [0, 0, 0, 0];   // x, y (template origin on the image, rounded), template w, h
+    public int[] Box { get; set; } = [0, 0, 0, 0];   // x, y, w, h
     public double Match { get; set; }
-    public double Angle { get; set; }   // unit rotation on the image, degrees (counter-clockwise on screen)
-    public bool Mirror { get; set; }    // matched by the mirrored template (part flipped over)
-    /// <summary>Template -> image affine [a, b, c, d, e, f] (rotation / distortion corrected); null = Box translation.</summary>
-    public double[]? Affine { get; set; }
-
-    public double[] Map() => Affine ?? Align.Translation(Box[0], Box[1]);
-
-    /// <summary>The unit's four corners on the image (top-left, top-right, bottom-right, bottom-left).</summary>
-    public (double x, double y)[] Corners()
-    {
-        var m = Map();
-        return [Align.Apply(m, 0, 0), Align.Apply(m, Box[2], 0), Align.Apply(m, Box[2], Box[3]), Align.Apply(m, 0, Box[3])];
-    }
 }
 
 public sealed class WireResult
@@ -51,7 +38,7 @@ public sealed class ImageResult
     public int Width { get; set; }
     public int Height { get; set; }
     public string Product { get; set; } = "";
-    public double Angle { get; set; }   // common unit direction, degrees (0 when the units point every way)
+    public double PixelUm { get; set; }
     public List<UnitResult> Units { get; set; } = [];
     public List<WireResult> Wires { get; set; } = [];
     public List<Defect> Defects { get; set; } = [];
@@ -111,14 +98,8 @@ public static class Inspector
         return units;
     }
 
-    public static (Point2d p1, Point2d p2) WirePoints(UnitResult u, WireSpec w) => WirePoints(u.Map(), w);
-
-    static (Point2d p1, Point2d p2) WirePoints(double[] m, WireSpec w)
-    {
-        var (x1, y1) = Align.Apply(m, w.P1[0], w.P1[1]);
-        var (x2, y2) = Align.Apply(m, w.P2[0], w.P2[1]);
-        return (new Point2d(x1, y1), new Point2d(x2, y2));
-    }
+    public static (Point2d p1, Point2d p2) WirePoints(UnitResult u, WireSpec w)
+        => (new Point2d(w.P1[0] + u.Box[0], w.P1[1] + u.Box[1]), new Point2d(w.P2[0] + u.Box[0], w.P2[1] + u.Box[1]));
 
     /// <summary>Gray (uint8) -> float, wire made dark, light blur: the image every wire is measured on.</summary>
     public static FImage Prepare(Mat gray8, bool dark)
@@ -131,43 +112,17 @@ public static class Inspector
         return FImage.FromMat(b);
     }
 
-    /// <summary>Units of one template (any angle, or upright only), each with Affine template -> image and Angle.</summary>
-    static List<UnitResult> Find(Mat gray8, Mat tpl, PixelParams a)
-    {
-        if (a.MaxAngle > 0) return Align.FindUnitsRotated(gray8, tpl, a.MatchThr, a.MaxAngle, a.AlignSearch, a.LocalAlign);
-        var units = FindUnits(gray8, tpl, a.MatchThr);
-        foreach (var u in units)
-        {
-            var m = a.LocalAlign ? Align.AlignUnit(gray8, tpl, u.Box, a.AlignSearch) : u.Map();
-            u.Affine = m;
-            u.Box[0] = (int)Math.Round(m[2]);
-            u.Box[1] = (int)Math.Round(m[5]);
-        }
-        return units;
-    }
-
     public static ImageResult Detect(Mat gray8, Product product)
     {
         if (product.Template == null) throw new InvalidOperationException("产品没有模板图");
         var a = product.Params();
-        var tpl = product.Template;
-        var units = Find(gray8, tpl, a);
-        if (a.AllowMirror)   // a part flipped over shows up mirrored in the X-ray picture
-        {
-            using var flipped = new Mat();
-            Cv2.Flip(tpl, flipped, FlipMode.Y);
-            units = Align.MergeMirrored(units, Find(gray8, flipped, a), tpl.Width, tpl.Height);
-        }
-        var res = new ImageResult
-        {
-            Width = gray8.Width, Height = gray8.Height, Product = product.Name, Units = units,
-            Angle = Math.Round(Align.MeanAngle(units.Select(u => u.Angle).ToList(), Align.SameDirection) * 10) / 10,
-        };
+        var res = new ImageResult { Width = gray8.Width, Height = gray8.Height, Product = product.Name, PixelUm = product.PixelUm };
+        res.Units = FindUnits(gray8, product.Template, a.MatchThr);
         var img = Prepare(gray8, a.Dark);
-        foreach (var u in units)
+        foreach (var u in res.Units)
             for (int i = 0; i < product.Wires.Count; i++)
             {
-                var (p1, p2) = WirePoints(u.Map(), product.Wires[i]);
+                var (p1, p2) = WirePoints(u, product.Wires[i]);
                 var r = InspectWire(img, p1, p2, a);
                 r.Unit = u.Index;
                 r.Index = i;
@@ -427,11 +382,10 @@ public static class Inspector
                 for (int j = 0; j < 3; j++) A[i, j] += w[k] * row[i] * row[j];
             }
         }
-        return Solve3(A, b) ?? [0, 0, 0];
+        return Solve3(A, b);
     }
 
-    /// <summary>3×3 linear system (Gauss-Jordan, partial pivoting); null when singular.</summary>
-    internal static double[]? Solve3(double[,] A, double[] b)
+    static double[] Solve3(double[,] A, double[] b)
     {
         int n = 3;
         var M = new double[n, n + 1];
@@ -444,7 +398,7 @@ public static class Inspector
         {
             int p = c;
             for (int r = c + 1; r < n; r++) if (Math.Abs(M[r, c]) > Math.Abs(M[p, c])) p = r;
-            if (Math.Abs(M[p, c]) < 1e-12) return null;
+            if (Math.Abs(M[p, c]) < 1e-12) return [0, 0, 0];
             for (int j = 0; j <= n; j++) (M[c, j], M[p, j]) = (M[p, j], M[c, j]);
             for (int r = 0; r < n; r++)
             {

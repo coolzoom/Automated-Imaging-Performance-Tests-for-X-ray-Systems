@@ -3,25 +3,22 @@ pixel size and thresholds, preview on the whole image, save to products/<name>/.
 import os
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGroupBox,
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGroupBox,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
                                QSpinBox, QSplitter, QVBoxLayout, QWidget)
 
-from core.autowires import auto_wires
+from core.autowires import auto_wires, calibrate_pitch
 from core.config import PRODUCTS_DIR
 from core.inspect import detect, find_units
 from core.product import Product, Wire, safe_name
 from ui.viewer import ImageViewer
 
 # product attribute, label, minimum, maximum, step, decimals
-NUMBERS = [('match_thr', '模板匹配阈值', 0.2, 0.99, 0.05, 2), ('wire_width_px', '线宽 px', 0.5, 50, 0.5, 1),
-           ('corridor_px', '搜索走廊半宽 px', 1, 200, 1, 1), ('end_tol_px', '端点缺口容限 px', 0, 500, 1, 1),
-           ('gap_max_px', '中段断开容限 px', 0, 500, 1, 1), ('shift_max_px', '焊点偏移上限 px', 0, 500, 0.5, 1),
+NUMBERS = [('match_thr', '模板匹配阈值', 0.2, 0.99, 0.05, 2), ('wire_diam_um', '线径 µm', 1, 500, 1, 1),
+           ('corridor_um', '搜索走廊半宽 µm', 5, 2000, 5, 1), ('end_tol_um', '端点缺口容限 µm', 0, 5000, 10, 1),
+           ('gap_max_um', '中段断开容限 µm', 0, 5000, 10, 1), ('shift_max_um', '焊点偏移上限 µm', 0, 5000, 5, 1),
            ('sweep_max_pct', 'sweep 上限 %', 0, 100, 0.5, 1), ('z_missing', 'z 缺线阈值', 0, 100, 0.5, 1),
-           ('z_seg', 'z 分段阈值', 0, 100, 0.5, 1), ('z_ball', 'z 焊点阈值', 0, 100, 0.5, 1),
-           ('max_angle_deg', '单元旋转范围 ±°', 0, 180, 5, 1), ('align_search_px', '局部校正搜索 px', 0, 200, 1, 1)]
-TIPS = {'max_angle_deg': '单元相对模板最多转多少度：180 = 任意方向（每个单元各自找角度），0 = 只找正放的单元（最快）',
-        'align_search_px': '每个单元分 2×2 块在这个范围内重新匹配，拟合仿射，修正局部扭曲 / 缩放'}
+           ('z_seg', 'z 分段阈值', 0, 100, 0.5, 1), ('z_ball', 'z 焊点阈值', 0, 100, 0.5, 1)]
 
 
 class ProductDialog(QDialog):
@@ -99,6 +96,16 @@ class ProductDialog(QDialog):
         form = QFormLayout(g)
         self.name = QLineEdit()
         form.addRow('名称', self.name)
+        self.pixel_um = QDoubleSpinBox(decimals=3, minimum=0.01, maximum=1000, singleStep=0.5)
+        form.addRow('像素尺寸 µm/px', self.pixel_um)
+        row = QHBoxLayout()
+        self.pitch = QDoubleSpinBox(decimals=3, minimum=0, maximum=1000, singleStep=0.1)
+        self.pitch.setToolTip('相邻两个单元的水平间距（mm）；点“标定”用模板匹配的单元周期反推像素尺寸')
+        b = QPushButton('标定')
+        b.clicked.connect(self._calibrate)
+        row.addWidget(self.pitch, 1)
+        row.addWidget(b)
+        form.addRow('单元间距 mm', row)
         self.polarity = QComboBox()
         self.polarity.addItem('导线偏暗', 'dark')
         self.polarity.addItem('导线偏亮', 'bright')
@@ -106,17 +113,10 @@ class ProductDialog(QDialog):
         self.spins = {}
         for key, label, lo, hi, step, dec in NUMBERS:
             s = QDoubleSpinBox(decimals=dec, minimum=lo, maximum=hi, singleStep=step)
-            s.setToolTip(TIPS.get(key, ''))
             self.spins[key] = s
             form.addRow(label, s)
         self.n_seg = QSpinBox(minimum=3, maximum=20)
         form.addRow('分段数', self.n_seg)
-        self.local_align = QCheckBox('每个单元做局部扭曲校正')
-        self.local_align.setToolTip(TIPS['align_search_px'])
-        form.addRow('局部校正', self.local_align)
-        self.allow_mirror = QCheckBox('也找镜像单元（零件翻面放）')
-        self.allow_mirror.setToolTip('零件翻面后 X 光图是镜像；勾选后同时用镜像模板找单元')
-        form.addRow('镜像', self.allow_mirror)
         self.note = QLineEdit()
         form.addRow('备注', self.note)
         rv.addWidget(g)
@@ -147,23 +147,21 @@ class ProductDialog(QDialog):
     def _load_form(self):
         p = self.p
         self.name.setText(p.name)
+        self.pixel_um.setValue(p.pixel_um)
         self.polarity.setCurrentIndex(1 if p.polarity == 'bright' else 0)
         for key, s in self.spins.items():
             s.setValue(float(getattr(p, key)))
         self.n_seg.setValue(int(p.n_seg))
-        self.local_align.setChecked(bool(p.local_align))
-        self.allow_mirror.setChecked(bool(p.allow_mirror))
         self.note.setText(p.note)
 
     def _read_form(self):
         p = self.p
         p.name = self.name.text().strip()
+        p.pixel_um = self.pixel_um.value()
         p.polarity = self.polarity.currentData()
         for key, s in self.spins.items():
             setattr(p, key, s.value())
         p.n_seg = self.n_seg.value()
-        p.local_align = self.local_align.isChecked()
-        p.allow_mirror = self.allow_mirror.isChecked()
         p.note = self.note.text()
         return p
 
@@ -213,7 +211,7 @@ class ProductDialog(QDialog):
                 p1, p2 = [w.p1[0] + bx, w.p1[1] + by], [w.p2[0] + bx, w.p2[1] + by]
                 wires.append({'unit': 0, 'index': i, 'flags': [], 'curve': [p1, p2], 'p1': p1, 'p2': p2, 'ball': p1,
                               'l': w.length, 'sweep_pct': 0, 'shift_px': 0, 'z_all': 0})
-            rec = {'wires': wires, 'units': []}
+            rec = {'wires': wires, 'units': [], 'pixel_um': self.p.pixel_um}
         self.viewer.set_result(rec, always=True, labels=True)
         self.viewer.select_wire(self.wire_list.currentRow() if self.preview is None else -1, center=False)
         self.viewer.set_extra(self.box, self.picks)
@@ -277,6 +275,17 @@ class ProductDialog(QDialog):
             del self.p.wires[i]
             self._changed()
 
+    def _calibrate(self):
+        if self.p.template is None or self.gray is None:
+            QMessageBox.information(self, '标定', '请先框选单元模板。')
+            return
+        um = calibrate_pitch(self.gray, self.p.template, self.spins['match_thr'].value(), self.pitch.value())
+        if um is None:
+            QMessageBox.information(self, '标定', '没有找到左右相邻的单元，或单元间距为 0，无法标定。')
+            return
+        self.pixel_um.setValue(um)
+        self.hint.setText('像素尺寸标定为 %.3f µm/px' % um)
+
     def _preview(self):
         if self.p.template is None or self.gray is None or not self.p.wires:
             QMessageBox.information(self, '预览', '请先设置模板和导线。')
@@ -284,9 +293,8 @@ class ProductDialog(QDialog):
         res = detect(self.gray, self._read_form())
         self.preview = res
         bad = [w for w in res['wires'] if w['flags']]
-        dirs = sorted({round(u['angle']) for u in res['units']})
-        self.preview_label.setText('单元 %d，导线 %d，NG <b style="color:#e02424">%d</b>，单元方向 %s°' %
-                                   (len(res['units']), len(res['wires']), len(bad), '、'.join(map(str, dirs[:8])) or '-'))
+        self.preview_label.setText('单元 %d，导线 %d，NG <b style="color:#e02424">%d</b>' %
+                                   (len(res['units']), len(res['wires']), len(bad)))
         self._draw()
 
     def _save(self):

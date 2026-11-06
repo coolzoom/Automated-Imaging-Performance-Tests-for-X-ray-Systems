@@ -2,7 +2,7 @@ using OpenCvSharp;
 
 namespace WireInspect.Core;
 
-/// <summary>Semi-automatic product setup: find the wires inside a unit template.</summary>
+/// <summary>Semi-automatic product setup: find the wires inside a unit template, calibrate the pixel size.</summary>
 public static class AutoWires
 {
     public static List<WireSpec> Find(Mat tpl8, Product p)
@@ -63,12 +63,12 @@ public static class AutoWires
         double minLen = Math.Max(12, 0.15 * Math.Min(tpl8.Width, tpl8.Height));
         var segs = Cv2.HoughLinesP(mask, 1, Math.PI / 180, (int)Math.Max(10, minLen / 2), minLen, Math.Max(3, a.Along))
             .Select(s => (x1: (double)s.P1.X, y1: (double)s.P1.Y, x2: (double)s.P2.X, y2: (double)s.P2.Y)).ToList();
-        var merged = Merge(segs, Math.Max(3, 2 * p.WireWidthPx), Math.Max(6, 2 * a.Along))
+        var merged = Merge(segs, Math.Max(3, 2 * p.Px(p.WireDiamUm)), Math.Max(6, 2 * a.Along))
             .Where(s => Math.Sqrt(Math.Pow(s.x2 - s.x1, 2) + Math.Pow(s.y2 - s.y1, 2)) >= minLen).ToList();
 
         var fimg = FImage.FromMat(img);
         var kept = new List<(double x1, double y1, double x2, double y2)>();
-        double perpTol = Math.Max(3, 2 * p.WireWidthPx);
+        double perpTol = Math.Max(3, 2 * p.Px(p.WireDiamUm));
         foreach (var s in merged.Select(s0 => Refine(fimg, s0, a)).OrderByDescending(SegLen))
         {
             if (kept.Any(k => Same(k, s, perpTol, -0.5 * SegLen(s)))) continue;   // a piece of a wire already kept
@@ -200,5 +200,19 @@ public static class AutoWires
         double t1 = (b.x1 - a.x1) * ux + (b.y1 - a.y1) * uy, t2 = (b.x2 - a.x1) * ux + (b.y2 - a.y1) * uy;
         double lo = Math.Min(t1, t2), hi = Math.Max(t1, t2);
         return lo <= la + gapTol && hi >= -gapTol;
+    }
+
+    /// <summary>µm per pixel from the known horizontal unit pitch (mm): median spacing of side-by-side units.</summary>
+    public static double? CalibratePitch(Mat gray8, Mat tpl8, double matchThr, double pitchMm)
+    {
+        var units = Inspector.FindUnits(gray8, tpl8, matchThr);
+        var dx = new List<double>();
+        foreach (var u in units)
+        {
+            var right = units.Where(v => v.Box[0] > u.Box[0] && Math.Abs(v.Box[1] - u.Box[1]) < tpl8.Height / 2.0)
+                .Select(v => (double)(v.Box[0] - u.Box[0])).DefaultIfEmpty(double.NaN).Min();
+            if (!double.IsNaN(right)) dx.Add(right);
+        }
+        return dx.Count == 0 || pitchMm <= 0 ? null : pitchMm * 1000 / Inspector.Median(dx);
     }
 }

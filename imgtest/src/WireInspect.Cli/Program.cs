@@ -7,8 +7,8 @@ CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
 const string Usage = """
 用法:
-  wireinspect detect <图片> [--product 名称] [--out 目录] [--simulate 缺线单元 断线单元 弯线单元] [--sim-sweep-px 5] [--rotate 度]
-  wireinspect make-product --image <图片> --box x,y,w,h --name 名称 [--wire x1,y1,x2,y2 ...] [--auto]
+  wireinspect detect <图片> [--product 名称] [--out 目录] [--simulate 缺线单元 断线单元 弯线单元] [--sim-sweep-px 5]
+  wireinspect make-product --image <图片> --box x,y,w,h --name 名称 [--pixel-um 10] [--wire x1,y1,x2,y2 ...] [--auto]
       --wire 用整图坐标；不给 --wire 时用 --auto 自动找线
   wireinspect list
 """;
@@ -44,6 +44,7 @@ static int MakeProduct(Dictionary<string, List<string>> o)
     var p = new Product
     {
         Name = o["name"][0],
+        PixelUm = o.TryGetValue("pixel-um", out var pu) ? double.Parse(pu[0]) : 10.0,
         Template = new Mat(gray, new Rect(b[0], b[1], b[2], b[3])).Clone(),
     };
     if (o.TryGetValue("wire", out var ws))
@@ -82,19 +83,11 @@ static int Detect(string path, Dictionary<string, List<string>> o)
         stem += "_sim";
         ImageIO.WritePng(Path.Combine(outDir, stem + ".png"), gray);
     }
-    if (o.TryGetValue("rotate", out var rot) && double.Parse(rot[0]) != 0)   // test aid: rotate the picture (counter-clockwise, corners cut off)
-    {
-        var rotated = Align.RotateInscribed(gray, double.Parse(rot[0]));
-        gray.Dispose();
-        gray = rotated;
-        stem += "_rot";
-        ImageIO.WritePng(Path.Combine(outDir, stem + ".png"), gray);
-    }
 
     var sw = System.Diagnostics.Stopwatch.StartNew();
     var res = Inspector.Detect(gray, product);
     sw.Stop();
-    Console.WriteLine($"产品 {product.Name}  单元 {res.Units.Count}  导线 {res.Wires.Count}  旋转 {res.Angle:F1}°  用时 {sw.ElapsedMilliseconds} ms");
+    Console.WriteLine($"产品 {product.Name}  单元 {res.Units.Count}  导线 {res.Wires.Count}  用时 {sw.ElapsedMilliseconds} ms");
     var lines = new List<string> { "unit,wire,x,y,match,result,z_all,z_seg,z_ball,sweep_px,sweep_pct,shift_px,gap1,gap2,L" };
     foreach (var w in res.Wires)
     {

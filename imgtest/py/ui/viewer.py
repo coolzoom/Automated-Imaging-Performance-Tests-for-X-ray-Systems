@@ -4,14 +4,12 @@ import cv2
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QImage, QPainter, QPainterPath, QPainterPathStroker, QPen, QPixmap,
-                           QPolygonF, QTransform)
+                           QTransform)
 from PySide6.QtWidgets import (QGraphicsEllipseItem, QGraphicsPathItem, QGraphicsPixmapItem, QGraphicsRectItem,
                                QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView)
 
-from core.align import apply
 from core.config import FROM_FLAG, type_color
 from core.imgio import clahe
-from core.inspect import unit_affine
 
 WIRE_OK = '#2ee6ff'
 WIRE_BAD = '#ff4d4f'
@@ -61,7 +59,7 @@ def _label(text, color, parent, pos, size=9, badge=True):
 class WireItem(QGraphicsPathItem):
     """One wire: the fitted curve (OK cyan / NG red); a missing wire is a dashed straight line."""
 
-    def __init__(self, w, index, label=False):
+    def __init__(self, w, index, pixel_um, label=False):
         super().__init__()
         self.index = index
         self.missing = 'MISSING' in w['flags']
@@ -74,9 +72,10 @@ class WireItem(QGraphicsPathItem):
         self.base_width = 2.3 if w['flags'] else 1.8
         self.width = self.base_width
         self.setZValue(8)
+        um = pixel_um or 1
         reasons = '、'.join(FROM_FLAG.get(f, f) for f in w['flags'])
-        self.setToolTip('单元 %d · 线 %d  长度 %.0f px  sweep %.1f%%  端点偏移 %.1f px  z %.1f%s' % (
-            w['unit'] + 1, w['index'] + 1, w['l'], w['sweep_pct'], w['shift_px'], w['z_all'],
+        self.setToolTip('单元 %d · 线 %d  长度 %.0f µm  sweep %.1f%%  端点偏移 %.1f µm  z %.1f%s' % (
+            w['unit'] + 1, w['index'] + 1, w['l'] * um, w['sweep_pct'], w['shift_px'] * um, w['z_all'],
             ('\n' + reasons) if reasons else ''))
         if reasons and label:
             _label(reasons, WIRE_BAD, self, (pts[0][0] + 6, pts[0][1] - 6))
@@ -202,19 +201,15 @@ class ImageViewer(QGraphicsView):
         wires = rec['wires']
         bad_units = {w['unit'] for w in wires if w['flags']}
         for u in rec.get('units') or []:
-            m = unit_affine(u)
-            w, h = u['box'][2], u['box'][3]
+            x, y, w, h = u['box']
             bad = u['index'] in bad_units
             color = WIRE_BAD if bad else UNIT_OK
-            # the unit as placed on the image (rotated / distorted when the image is)
-            box = self.scene().addPolygon(QPolygonF([QPointF(*apply(m, px, py)) for px, py in
-                                                     ((0, 0), (w, 0), (w, h), (0, h))]), _pen(color, 1.5, Qt.DashLine))
+            box = self.scene().addRect(QRectF(x, y, w, h), _pen(color, 1.5, Qt.DashLine))
             box.setZValue(5)
-            turn = (' · 镜像' if u.get('mirror') else '') + (' · %.0f°' % u['angle'] if abs(u.get('angle', 0)) >= 0.5 else '')
-            _label('单元 %d%s%s' % (u['index'] + 1, turn, ' · NG' if bad else ''), color, box, apply(m, 5, 3))
+            _label('单元 %d%s' % (u['index'] + 1, ' · NG' if bad else ''), color, box, (x + 5, y + 3))
             self._overlay.append(box)
         for i, w in enumerate(wires):
-            it = WireItem(w, i, labels)
+            it = WireItem(w, i, rec.get('pixel_um'), labels)
             self.scene().addItem(it)
             self._overlay.append(it)
             self._wire_items.append(it)

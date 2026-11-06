@@ -19,15 +19,5 @@
 
 ## Notes
 - Root folder is found by walking up from the executable to a folder containing `products/`; override with `WIREINSPECT_HOME`.
-- Reference result on 2_8_4.jpg (2_8_4_demo): 9 units, units 6–8 SHIFT (~3.8–4.0 px), others OK; `--simulate 1 4 7` -> MISSING / BROKEN / SWEEP;
-  `--rotate 90` / `--rotate -4` (test aid) -> same verdicts on the rotated picture; ~1.1 s per image.
-- Rotation / distortion: `Align.FindUnitsRotated` — every unit has its own angle (parts may lie any way, `max_angle_deg`
-  default 180, 0 = old upright-only path, ~4× faster). Centre square of the template (side min/√2) matched every few
-  degrees on a half-size image -> per-pixel best -> candidates; each cut out upright (own bilinear `Align.WarpBack`, not
-  `Cv2.WarpAffine`: OpenCV 4.13 vs 5.0 differ), angle refined 0.5° / 0.1°, 180° flip checked, 2×2 block affine for
-  distortion -> `UnitResult.Affine` (template -> image) + `Angle`; wires measured on the original image.
-- Mirror (`allow_mirror`, default on): units also searched with the flipped template; one side per picture
-  (`Align.MergeMirrored`: mirrored only if it scores clearly better where both sides found units).
-- All lengths in pixels (`*_px` in product.json; old `*_um` + `pixel_um` files are converted on load). No µm anywhere.
-- `py/core/align.py` + `py/core/inspect.py` mirror `Align.cs` + `Inspector.cs`; check both with `cd py && .venv/bin/python xval/compare.py`.
+- Reference result on 2_8_4.jpg (2_8_4_demo): 9 units, units 6–8 SHIFT (~4.2–4.9 px), others OK; `--simulate 1 4 7` -> MISSING / BROKEN / SWEEP.
 - Keep the C# numbers in line with wire_inspect.py when changing Inspector.InspectWire.

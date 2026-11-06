@@ -2,8 +2,7 @@
 import cv2
 import numpy as np
 
-from .align import apply
-from .inspect import unit_affine, wire_points
+from .inspect import wire_points
 
 
 def _pt(p):
@@ -60,10 +59,7 @@ def annotate(gray8, res, scale=2):
         bad = [w for w in wires if w['flags']]
         col = ng if bad else ok
         x, y, bw, bh = u['box']
-        m = unit_affine(u)
-        quad = [S(*apply(m, px, py)) for px, py in ((0, 0), (bw, 0), (bw, bh), (0, bh))]
-        cv2.polylines(vis, [np.array(quad, np.int32).reshape(-1, 1, 2)], True, col, 2)
-        x, y = apply(m, 0, 0)
+        cv2.rectangle(vis, S(x, y), S(x + bw, y + bh), col, 2)
         for w in wires:
             if 'MISSING' in w['flags']:
                 cv2.line(vis, S(*w['p1']), S(*w['p2']), ng, 1)

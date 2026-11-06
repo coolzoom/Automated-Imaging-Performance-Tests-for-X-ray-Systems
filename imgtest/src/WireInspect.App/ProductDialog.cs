@@ -12,7 +12,7 @@ using Window = Avalonia.Controls.Window;
 namespace WireInspect.App;
 
 /// <summary>New / edit product: frame one unit (-> tpl.png), find its wires automatically, fix them by hand,
-/// set the thresholds (lengths in pixels), preview, save.</summary>
+/// set the pixel size (or calibrate it from the unit pitch) and the µm thresholds, preview, save.</summary>
 public sealed class ProductDialog : Window
 {
     public string? Saved { get; private set; }
@@ -35,12 +35,13 @@ public sealed class ProductDialog : Window
     readonly ToggleButton _btnAdd = new() { Content = "手动添加(点两点)" };
     readonly Button _btnDel = new() { Content = "删除" }, _btnRev = new() { Content = "反向" };
     readonly ListBox _list = new() { Height = 150 };
-    readonly NumericUpDown _wireWidth = Num(2.5, 0.5, 50, 0.5, "0.#"), _corridor = Num(7, 1, 200, 1, "0.#"), _endTol = Num(10, 0, 500, 1, "0.#"),
-        _gapMax = Num(8, 0, 500, 1, "0.#"), _shiftMax = Num(3.5, 0, 500, 0.5, "0.#"), _sweepMax = Num(6, 0.5, 100, 0.5, "0.#"),
+    readonly NumericUpDown _pixelUm = Num(10, 0.1, 500, 0.1, "0.###");
+    readonly NumericUpDown _pitchMm = Num(1.5, 0.01, 100, 0.01, "0.###");
+    readonly Button _btnCal = new() { Content = "按单元间距标定" };
+    readonly NumericUpDown _wireDiam = Num(25, 1, 500, 1, "0.#"), _corridor = Num(70, 5, 2000, 5, "0.#"), _endTol = Num(100, 5, 2000, 5, "0.#"),
+        _gapMax = Num(80, 5, 2000, 5, "0.#"), _shiftMax = Num(35, 1, 2000, 1, "0.#"), _sweepMax = Num(6, 0.5, 100, 0.5, "0.#"),
         _zMissing = Num(6, 1, 50, 0.5, "0.#"), _zSeg = Num(2.5, 0.5, 50, 0.5, "0.#"), _zBall = Num(2.5, 0, 50, 0.5, "0.#"),
-        _matchThr = Num(0.6, 0.2, 0.99, 0.05, "0.##"), _maxAngle = Num(180, 0, 180, 5, "0.#"), _alignSearch = Num(5, 0, 200, 1, "0.#");
-    readonly CheckBox _localAlign = new() { Content = "每个单元做局部扭曲校正", IsChecked = true };
-    readonly CheckBox _allowMirror = new() { Content = "也找镜像单元（零件翻面放）", IsChecked = true };
+        _matchThr = Num(0.6, 0.2, 0.99, 0.05, "0.##");
     readonly ComboBox _polarity = new() { ItemsSource = new[] { "导线比背景暗", "导线比背景亮" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
     readonly ToggleButton _btnPreview = new() { Content = "预览检测（整张图）", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
     readonly TextBlock _previewInfo = new() { TextWrapping = TextWrapping.Wrap };
@@ -99,10 +100,7 @@ public sealed class ProductDialog : Window
             }
             return g;
         }
-        ToolTip.SetTip(_maxAngle, "单元相对模板最多转多少度：180 = 任意方向（每个单元各自找角度），0 = 只找正放的单元（最快）");
-        ToolTip.SetTip(_alignSearch, "每个单元分 2×2 块在这个范围内重新匹配，拟合仿射，修正局部扭曲 / 缩放");
-        ToolTip.SetTip(_allowMirror, "零件翻面后 X 光图是镜像；勾选后同时用镜像模板找单元");
-        foreach (var b in new Control[] { _btnBox, _btnAuto, _btnAdd, _btnDel, _btnRev })
+        foreach (var b in new Control[] { _btnBox, _btnAuto, _btnAdd, _btnDel, _btnRev, _btnCal })
         {
             b.HorizontalAlignment = HorizontalAlignment.Stretch;
             if (b is ContentControl cc) cc.HorizontalContentAlignment = HorizontalAlignment.Center;
@@ -117,12 +115,12 @@ public sealed class ProductDialog : Window
                 Form(("产品名称", _name)),
                 Section("单元模板"), _btnBox, _tplInfo,
                 Section("导线（模板坐标，焊点1 → 焊点2）"), _btnAuto, _list, wireButtons,
-                Section("阈值（长度单位：像素）"),
-                Form(("线宽", _wireWidth), ("走廊半宽", _corridor), ("端点缺口容差", _endTol), ("中段断线缺口", _gapMax),
+                Section("像素尺寸"),
+                Form(("µm / 像素", _pixelUm), ("单元横向间距 mm", _pitchMm)), _btnCal,
+                Section("阈值（长度单位 µm）"),
+                Form(("线径", _wireDiam), ("走廊半宽", _corridor), ("端点缺口容差", _endTol), ("中段断线缺口", _gapMax),
                      ("端点偏移上限", _shiftMax), ("sweep 上限 %", _sweepMax), ("缺线 z", _zMissing), ("分段 z（断线）", _zSeg),
                      ("焊点 z", _zBall), ("模板匹配阈值", _matchThr), ("极性", _polarity)),
-                Section("旋转 / 扭曲校正"),
-                Form(("单元旋转范围 ±°", _maxAngle), ("局部校正搜索 px", _alignSearch), ("局部校正", _localAlign), ("镜像", _allowMirror)),
                 Section("预览"), _btnPreview, _previewInfo,
             },
         };
@@ -232,6 +230,7 @@ public sealed class ProductDialog : Window
             _wires[i] = _wires[i].Reversed();
             Redraw(i);
         };
+        _btnCal.Click += (_, _) => Calibrate();
         _btnPreview.IsCheckedChanged += (_, _) =>
         {
             if (_btnPreview.IsChecked == true) Preview();
@@ -275,8 +274,9 @@ public sealed class ProductDialog : Window
             }
         }
         else _tplInfo.Text = "未框选";
+        double um = (double)(_pixelUm.Value ?? 10);
         _list.ItemsSource = _wires.Select((w, i) =>
-            $"线{i + 1}  ({w.P1[0]:F1}, {w.P1[1]:F1}) → ({w.P2[0]:F1}, {w.P2[1]:F1})  {w.Length:F0} px").ToList();
+            $"线{i + 1}  ({w.P1[0]:F1}, {w.P1[1]:F1}) → ({w.P2[0]:F1}, {w.P2[1]:F1})  {w.Length * um:F0} µm").ToList();
         if (select is { } s && s < _wires.Count) _list.SelectedIndex = s;
         _viewer.SelectedWire = _list.SelectedIndex >= 0 ? _list.SelectedIndex : null;
         _viewer.Refresh();
@@ -286,42 +286,36 @@ public sealed class ProductDialog : Window
     {
         var p = _work;
         _name.Text = p.Name;
-        _wireWidth.Value = (decimal)p.WireWidthPx;
-        _corridor.Value = (decimal)p.CorridorPx;
-        _endTol.Value = (decimal)p.EndTolPx;
-        _gapMax.Value = (decimal)p.GapMaxPx;
-        _shiftMax.Value = (decimal)p.ShiftMaxPx;
+        _pixelUm.Value = (decimal)p.PixelUm;
+        _wireDiam.Value = (decimal)p.WireDiamUm;
+        _corridor.Value = (decimal)p.CorridorUm;
+        _endTol.Value = (decimal)p.EndTolUm;
+        _gapMax.Value = (decimal)p.GapMaxUm;
+        _shiftMax.Value = (decimal)p.ShiftMaxUm;
         _sweepMax.Value = (decimal)p.SweepMaxPct;
         _zMissing.Value = (decimal)p.ZMissing;
         _zSeg.Value = (decimal)p.ZSeg;
         _zBall.Value = (decimal)p.ZBall;
         _matchThr.Value = (decimal)p.MatchThr;
         _polarity.SelectedIndex = p.Polarity == "bright" ? 1 : 0;
-        _maxAngle.Value = (decimal)p.MaxAngleDeg;
-        _alignSearch.Value = (decimal)p.AlignSearchPx;
-        _allowMirror.IsChecked = p.AllowMirror;
-        _localAlign.IsChecked = p.LocalAlign;
     }
 
     void ApplyFields(Product p)
     {
         static double V(NumericUpDown n) => (double)(n.Value ?? n.Minimum);
         p.Name = (_name.Text ?? "").Trim();
-        p.WireWidthPx = V(_wireWidth);
-        p.CorridorPx = V(_corridor);
-        p.EndTolPx = V(_endTol);
-        p.GapMaxPx = V(_gapMax);
-        p.ShiftMaxPx = V(_shiftMax);
+        p.PixelUm = V(_pixelUm);
+        p.WireDiamUm = V(_wireDiam);
+        p.CorridorUm = V(_corridor);
+        p.EndTolUm = V(_endTol);
+        p.GapMaxUm = V(_gapMax);
+        p.ShiftMaxUm = V(_shiftMax);
         p.SweepMaxPct = V(_sweepMax);
         p.ZMissing = V(_zMissing);
         p.ZSeg = V(_zSeg);
         p.ZBall = V(_zBall);
         p.MatchThr = V(_matchThr);
         p.Polarity = _polarity.SelectedIndex == 1 ? "bright" : "dark";
-        p.MaxAngleDeg = V(_maxAngle);
-        p.AlignSearchPx = V(_alignSearch);
-        p.AllowMirror = _allowMirror.IsChecked == true;
-        p.LocalAlign = _localAlign.IsChecked == true;
     }
 
     Product? Candidate()
@@ -350,6 +344,18 @@ public sealed class ProductDialog : Window
             : $"找到 {found.Count} 根线。请逐根核对：多余的删除，漏掉的手动添加，焊点1（橙圈）应在芯片侧，否则点“反向”");
     }
 
+    void Calibrate()
+    {
+        if (_image == null || _source != _image) { Hint("需要整张图：请在主窗口选中图片后打开本对话框"); return; }
+        using var tpl = CropTemplate();
+        if (tpl == null) { Hint("请先框选单元模板"); return; }
+        var um = AutoWires.CalibratePitch(_image, tpl, (double)(_matchThr.Value ?? 0.6m), (double)(_pitchMm.Value ?? 0));
+        if (um == null) { Hint("图中没有找到左右相邻的单元，无法标定；请直接输入 µm/像素"); return; }
+        _pixelUm.Value = (decimal)Math.Round(um.Value, 3);
+        Redraw();
+        Hint($"已按单元间距 {_pitchMm.Value} mm 标定：{um.Value:F3} µm/像素");
+    }
+
     void Preview()
     {
         if (_image == null || _source != _image)
@@ -372,7 +378,7 @@ public sealed class ProductDialog : Window
         foreach (var u in res.Units)
         {
             bool unitBad = res.Wires.Any(w => w.Unit == u.Index && w.Bad);
-            _viewer.Units.Add(UnitMark.Of(u, Color.Parse(unitBad ? "#ff4d4f" : "#67d69c"),
+            _viewer.Units.Add(new UnitMark(new Rect(u.Box[0], u.Box[1], u.Box[2], u.Box[3]), Color.Parse(unitBad ? "#ff4d4f" : "#67d69c"),
                 $"单元 {u.Index + 1} {u.Match:F2}"));
         }
         foreach (var w in res.Wires)
@@ -388,7 +394,6 @@ public sealed class ProductDialog : Window
         _viewer.Refresh();
         int bad = res.Wires.Count(w => w.Bad);
         _previewInfo.Text = $"找到 {res.Units.Count} 个单元、{res.Wires.Count} 根线，其中 {bad} 根判为异常。"
-                            + (res.Units.Any(u => u.Angle != 0) ? $"单元方向 {string.Join("、", res.Units.Select(u => Math.Round(u.Angle)).Distinct().Order().Take(8))}°。" : "")
                             + (res.Units.Count == 0 ? "\n没有匹配到单元：降低模板匹配阈值或重新框选。" : "")
                             + (bad > 0 ? "\n良品图上出现异常时，请核对导线位置或放宽对应阈值。" : "");
         Hint("预览：青色 = 正常，红色 = 异常；再点一次“预览检测”回到编辑");

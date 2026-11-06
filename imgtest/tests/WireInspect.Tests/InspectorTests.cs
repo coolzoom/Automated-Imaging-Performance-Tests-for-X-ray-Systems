@@ -66,132 +66,17 @@ public class InspectorTests
         Assert.Equal(Ox + 7, r.Units[0].Box[0]);
     }
 
-    [Theory]
-    [InlineData(4)]
-    [InlineData(-7)]
-    [InlineData(35)]
-    [InlineData(90)]
-    [InlineData(135)]
-    [InlineData(180)]
-    [InlineData(-100)]
-    public void RotatedImage_AnyAngle(double deg)
-    {
-        using var good = Make();
-        var product = MakeProduct(good);
-        using var img = Rotate(good, deg);
-        var r = Inspector.Detect(img, product);
-        Assert.InRange((r.Angle - deg + 540) % 360 - 180, -0.3, 0.3);
-        Assert.Equal(9, r.Units.Count);
-        Assert.True(r.Wires.All(w => !w.Bad), Bad(r));
-        Assert.True(r.Wires.All(w => w.ShiftPx < 1));
-    }
-
     [Fact]
-    public void RotatedMissingWire_FoundInPlace()
+    public void PixelParams_FollowMicrometres()
     {
-        using var good = Make();
-        using var miss = Make(new Opts { Missing = (4, 1) });
-        using var img = Rotate(miss, 137);
-        var r = Inspector.Detect(img, MakeProduct(good));
-        var bad = Assert.Single(r.Wires, w => w.Bad);
-        Assert.Equal((4, 1), (bad.Unit, bad.Index));
-        Assert.Contains("MISSING", bad.Flags);
-        var d = Assert.Single(r.Defects);   // in original image coordinates: covers where the wire should be
-        Assert.InRange(bad.P1[0], d.X0, d.X1);
-        Assert.InRange(bad.P1[1], d.Y0, d.Y1);
-    }
-
-    public static TheoryData<string> MixedCases => ["none", "missing", "broken", "sweep"];
-
-    [Theory]
-    [MemberData(nameof(MixedCases))]
-    public void UnitsInDifferentDirections(string defect)
-    {
-        double[] angles = [0, 35, 90, -120, 180, 15, -60, 145, 270];
-        var (o, target, flag) = defect switch
-        {
-            "missing" => (new Opts { Missing = (4, 1) }, (4, 1), "MISSING"),
-            "broken" => (new Opts { Broken = (2, 0) }, (2, 0), "BROKEN"),
-            "sweep" => (new Opts { Sweep = (6, 0) }, (6, 0), "SWEEP"),
-            _ => (new Opts(), (-1, -1), ""),
-        };
-        using var good = Make();
-        using var img = MakeMixed(angles, o);
-        var r = Inspector.Detect(img, MakeProduct(good));
-        Assert.Equal(9, r.Units.Count);
-        for (int i = 0; i < 9; i++)   // image row order = drawing order
-            Assert.InRange((r.Units[i].Angle - angles[i] + 540) % 360 - 180, -0.5, 0.5);
-        var bad = r.Wires.Where(w => w.Bad).ToList();
-        if (flag == "") Assert.True(bad.Count == 0, Bad(r));
-        else
-        {
-            var b = Assert.Single(bad);
-            Assert.Equal(target, (b.Unit, b.Index));
-            Assert.Contains(flag, b.Flags);
-        }
-    }
-
-    [Fact]
-    public void AlignmentOff_KeepsTranslation()
-    {
-        using var good = Make();
-        var p = MakeProduct(good);
-        p.LocalAlign = false;
-        p.MaxAngleDeg = 0;
-        var r = Inspector.Detect(good, p);
-        Assert.Equal(0, r.Angle);
-        Assert.Equal([1, 0, Ox, 0, 1, Oy], r.Units[0].Affine!);
-    }
-
-    [Theory]
-    [InlineData(0.03)]
-    [InlineData(-0.03)]
-    public void DistortedImage_AllOk(double k)
-    {
-        using var good = Make();
-        using var img = Barrel(good, k);
-        var r = Inspector.Detect(img, MakeProduct(good));
-        Assert.Equal(9, r.Units.Count);
-        Assert.True(r.Wires.All(w => !w.Bad), Bad(r));
-    }
-
-    [Fact]
-    public void PixelParams()
-    {
-        var a = new Product { CorridorPx = 7, EndTolPx = 10, ShiftMaxPx = 3.5, WireWidthPx = 2.5 }.Params();
+        var p = new Product { PixelUm = 10, CorridorUm = 70, EndTolUm = 100, ShiftMaxUm = 35, WireDiamUm = 25 };
+        var a = p.Params();
         Assert.Equal((7, 3, 4, 2, 6, 7), (a.HalfW, a.BgOff, a.BgW, a.D, a.Ext, a.Along));
         Assert.Equal(10, a.EndTol, 6);
         Assert.Equal(3.5, a.ShiftMax, 6);
-        var b = new Product { CorridorPx = 14, WireWidthPx = 5 }.Params();
+        var b = new Product { PixelUm = 5, CorridorUm = 70, WireDiamUm = 25 }.Params();
         Assert.Equal(14, b.HalfW);
         Assert.True(b.Along > a.Along && b.D >= a.D);
-    }
-
-    [Fact]
-    public void OldMicrometreProduct_IsConverted()
-    {
-        var p = Product.FromJson("""{"name":"old","pixel_um":5,"wire_diam_um":25,"corridor_um":70,"end_tol_um":100,"gap_max_um":80,"shift_max_um":35,"align_search_um":50}""");
-        Assert.Equal((5.0, 14.0, 20.0, 16.0, 7.0, 10.0), (p.WireWidthPx, p.CorridorPx, p.EndTolPx, p.GapMaxPx, p.ShiftMaxPx, p.AlignSearchPx));
-        Assert.DoesNotContain("pixel_um", System.Text.Json.JsonSerializer.Serialize(p, Json.Options));
-    }
-
-    [Fact]
-    public void MirroredUnits_Found()
-    {
-        using var good = Make();
-        var product = MakeProduct(good);
-        using var miss = Make(new Opts { Missing = (4, 1) });
-        using var img = new OpenCvSharp.Mat();
-        OpenCvSharp.Cv2.Flip(miss, img, OpenCvSharp.FlipMode.Y);
-        var r = Inspector.Detect(img, product);
-        Assert.Equal(9, r.Units.Count);
-        Assert.True(r.Units.All(u => u.Mirror));
-        var bad = Assert.Single(r.Wires, w => w.Bad);
-        Assert.Contains("MISSING", bad.Flags);
-        product.AllowMirror = false;   // only rotations: a 180° turn fits, but clearly worse than the mirror
-        var r2 = Inspector.Detect(img, product);
-        Assert.DoesNotContain(r2.Units, u => u.Mirror);
-        Assert.True(r.Units.Min(u => u.Match) > r2.Units.Max(u => u.Match));
     }
 
     [Fact]
@@ -211,5 +96,15 @@ public class InspectorTests
             Assert.InRange(Math.Abs(w.P2[0] - truth.P2[0]), 0, 8);
             Assert.InRange(Math.Abs(w.P2[1] - truth.P2[1]), 0, 3);
         }
+    }
+
+    [Fact]
+    public void CalibratePitch_FromUnitSpacing()
+    {
+        using var good = Make();
+        var p = MakeProduct(good);
+        var um = AutoWires.CalibratePitch(good, p.Template!, p.MatchThr, 1.5);
+        Assert.NotNull(um);
+        Assert.Equal(1500.0 / PitchX, um!.Value, 3);
     }
 }
