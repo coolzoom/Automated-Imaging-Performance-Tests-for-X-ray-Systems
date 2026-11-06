@@ -5,6 +5,7 @@ import math
 import cv2
 import numpy as np
 
+from . import align
 from .config import FROM_FLAG
 from .imgio import read_gray
 
@@ -49,9 +50,16 @@ def find_units(gray8, tpl8, thr):
     return units
 
 
+def unit_affine(unit):
+    """2×3 map template -> image of a unit (its own affine, else the box translation)."""
+    if unit.get('affine'):
+        return np.array(unit['affine'], np.float64).reshape(2, 3)
+    return np.array([[1.0, 0.0, unit['box'][0]], [0.0, 1.0, unit['box'][1]]], np.float64)
+
+
 def wire_points(unit, wire):
-    x, y = unit['box'][0], unit['box'][1]
-    return (wire.p1[0] + x, wire.p1[1] + y), (wire.p2[0] + x, wire.p2[1] + y)
+    m = unit_affine(unit)
+    return align.apply(m, *wire.p1), align.apply(m, *wire.p2)
 
 
 def prepare(gray8, dark):
@@ -62,17 +70,35 @@ def prepare(gray8, dark):
     return FImage(cv2.GaussianBlur(f, (0, 0), 0.7))
 
 
+def _find(gray8, tpl, a):
+    """Units of one template (any angle, or upright only), each with affine template -> image and angle."""
+    if a.max_angle > 0:
+        return align.find_units_rotated(gray8, tpl, a.match_thr, a.max_angle, a.align_search, a.local_align)
+    units = find_units(gray8, tpl, a.match_thr)
+    for u in units:
+        m = align.align_unit(gray8, tpl, u['box'], a.align_search) if a.local_align else unit_affine(u)
+        u['affine'] = [float(v) for v in m.ravel()]
+        u['box'][0], u['box'][1] = round(m[0, 2]), round(m[1, 2])
+        u['angle'] = 0.0
+    return units
+
+
 def detect(gray8, product):
     if product.template is None:
         raise ValueError('产品没有模板图')
     a = product.params()
+    tpl = product.template
+    units = _find(gray8, tpl, a)
+    if a.allow_mirror:   # a part flipped over shows up mirrored in the X-ray picture
+        units = align.merge_mirrored(units, _find(gray8, np.ascontiguousarray(tpl[:, ::-1]), a), tpl.shape[1], tpl.shape[0])
     res = {'width': int(gray8.shape[1]), 'height': int(gray8.shape[0]), 'product': product.name,
-           'pixel_um': product.pixel_um, 'units': find_units(gray8, product.template, a.match_thr), 'wires': []}
+           'angle': round(align.mean_angle([u['angle'] for u in units], align.SAME_DIRECTION) * 10) / 10,
+           'units': units, 'wires': []}
     img = prepare(gray8, a.dark)
-    for u in res['units']:
+    for u in units:
+        m = unit_affine(u)
         for i, w in enumerate(product.wires):
-            p1, p2 = wire_points(u, w)
-            r = inspect_wire(img, p1, p2, a)
+            r = inspect_wire(img, align.apply(m, *w.p1), align.apply(m, *w.p2), a)
             r['unit'], r['index'] = u['index'], i
             res['wires'].append(r)
     res['defects'] = make_defects(res['wires'], a)

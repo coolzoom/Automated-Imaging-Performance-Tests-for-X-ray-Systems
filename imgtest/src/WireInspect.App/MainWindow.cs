@@ -67,7 +67,7 @@ public sealed class MainWindow : Window
     readonly SelectableTextBlock _info = new() { Text = "请先导入文件夹", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 2, 2, 6) };
     readonly TabControl _tabs = new();
     readonly SimpleTable _defectTable = new(["类型", "候选分数", "来源", "状态"], "*,64,92,56");
-    readonly SimpleTable _wireTable = new(["单元", "线", "长度µm", "sweep%", "偏移µm", "z", "判定"], "40,30,56,56,56,40,*");
+    readonly SimpleTable _wireTable = new(["单元", "线", "长度px", "sweep%", "偏移px", "z", "判定"], "40,30,56,56,56,40,*");
     readonly TextBlock _wireInfo = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 2, 2, 6) };
     readonly Button _btnAccept = new() { Content = "确认缺陷(A)" }, _btnReject = new() { Content = "误报(X)" }, _btnDelete = new() { Content = "删除" };
     readonly ComboBox _typeCombo = new() { ItemsSource = DefectTypes.All, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -428,7 +428,7 @@ public sealed class MainWindow : Window
                 _product = p;
                 _cfg.Product = name;
                 _cfg.Save();
-                ToolTip.SetTip(_productCombo, $"{p.Name}：{p.Wires.Count} 根线/单元，{p.PixelUm:G4} µm/px，模板 {p.TplSize[0]}×{p.TplSize[1]}");
+                ToolTip.SetTip(_productCombo, $"{p.Name}：{p.Wires.Count} 根线/单元，模板 {p.TplSize[0]}×{p.TplSize[1]}");
             }
             catch (Exception e)
             {
@@ -718,19 +718,18 @@ public sealed class MainWindow : Window
     {
         var units = r.Units ?? [];
         var wires = r.Wires ?? [];
-        double um = r.PixelUm > 0 ? r.PixelUm : 1;
         foreach (var u in units)
         {
             bool bad = wires.Any(w => w.Unit == u.Index && w.Bad);
             var missing = wires.Any(w => w.Unit == u.Index && w.Flags.Contains("MISSING"));
-            _viewer.Units.Add(new UnitMark(new Rect(u.Box[0], u.Box[1], u.Box[2], u.Box[3]), Color.Parse(bad ? WireBad : "#67d69c"),
-                $"单元 {u.Index + 1}{(missing ? " · 漏线" : bad ? " · 异常" : "")}"));
+            _viewer.Units.Add(UnitMark.Of(u, Color.Parse(bad ? WireBad : "#67d69c"),
+                $"单元 {u.Index + 1}{(u.Mirror ? " · 镜像" : "")}{(Math.Abs(u.Angle) >= 0.5 ? $" · {u.Angle:F0}°" : "")}{(missing ? " · 漏线" : bad ? " · 异常" : "")}"));
         }
         for (int i = 0; i < wires.Count; i++)
         {
             var w = wires[i];
             var color = Color.Parse(w.Bad ? WireBad : WireOk);
-            var tip = $"单元 {w.Unit + 1} 线 {w.Index + 1}  长度 {w.L * um:F0} µm  sweep {w.SweepPct:F1}%  偏移 {w.ShiftPx * um:F0} µm  z {w.ZAll:F1}"
+            var tip = $"单元 {w.Unit + 1} 线 {w.Index + 1}  长度 {w.L:F0} px  sweep {w.SweepPct:F1}%  偏移 {w.ShiftPx:F1} px  z {w.ZAll:F1}"
                       + (w.Bad ? "\n" + CsvReport.FlagText(w.Flags) : "");
             var label = w.Bad ? string.Join("、", w.Flags.Take(2).Select(f => DefectTypes.FromFlag[f])) : null;
             if (w.Flags.Contains("MISSING"))
@@ -745,17 +744,16 @@ public sealed class MainWindow : Window
     void FillWireTable(ImageRecord r)
     {
         var wires = r.Wires ?? [];
-        double um = r.PixelUm > 0 ? r.PixelUm : 1;
         var red = Brush.Parse("#e02424");
         _wireTable.SetRows(wires.Select((w, i) =>
         {
             var c = w.Bad ? red : null;
-            return new TableRow([(w.Unit + 1).ToString(), (w.Index + 1).ToString(), (w.L * um).ToString("F0"), w.SweepPct.ToString("F1"),
-                (w.ShiftPx * um).ToString("F0"), w.ZAll.ToString("F1"), w.Bad ? CsvReport.FlagText(w.Flags) : "正常"],
-                [c, c, c, c, c, c, c], i, $"z_ball {w.ZBall:F1}  起点缺口 {w.Gap1 * um:F0} µm  终点缺口 {w.Gap2 * um:F0} µm  中段缺口 {w.GapMid * um:F0} µm");
+            return new TableRow([(w.Unit + 1).ToString(), (w.Index + 1).ToString(), w.L.ToString("F0"), w.SweepPct.ToString("F1"),
+                w.ShiftPx.ToString("F1"), w.ZAll.ToString("F1"), w.Bad ? CsvReport.FlagText(w.Flags) : "正常"],
+                [c, c, c, c, c, c, c], i, $"z_ball {w.ZBall:F1}  起点缺口 {w.Gap1:F0} px  终点缺口 {w.Gap2:F0} px  中段缺口 {w.GapMid:F0} px");
         }));
         if (wires.Count == 0)
-            _wireInfo.Text = r.DetectedAt == null ? "本图还没有检测结果：点“开始检测”" : "本图没有找到单元（检查产品是否选对、模板匹配阈值）";
+            _wireInfo.Text = r.DetectedAt == null ? "本图还没有检测结果：点“开始检测”" : "本图没有找到单元：检查产品是否选对、模板匹配阈值、旋转范围 / 镜像（产品参数）";
         else
         {
             int bad = wires.Count(w => w.Bad);
@@ -763,7 +761,7 @@ public sealed class MainWindow : Window
             [
                 new Run($"单元 {r.Units?.Count ?? 0} 个，导线 "), new Run(wires.Count.ToString()) { FontWeight = FontWeight.Bold },
                 new Run(" 条，其中 "), new Run(bad.ToString()) { FontWeight = FontWeight.Bold, Foreground = red },
-                new Run($" 条异常。中位长度 {Inspector.Median(wires.Select(w => w.L * um)):F0} µm，中位 sweep {Inspector.Median(wires.Select(w => w.SweepPct)):F1}%。"),
+                new Run($" 条异常。中位长度 {Inspector.Median(wires.Select(w => w.L)):F0} px，中位 sweep {Inspector.Median(wires.Select(w => w.SweepPct)):F1}%。"),
             ];
         }
     }
@@ -783,7 +781,18 @@ public sealed class MainWindow : Window
         if (r.Width > 0)
         {
             inl.Add(new LineBreak());
-            inl.Add(new Run($"尺寸: {r.Width}×{r.Height}   产品: {r.Product}  {r.PixelUm:G4} µm/px"));
+            inl.Add(new Run($"尺寸: {r.Width}×{r.Height}   产品: {r.Product}"));
+            if (r.DetectedAt != null && r.Error == null && r.Units is not { Count: > 0 })
+            {
+                inl.Add(new LineBreak());
+                inl.Add(new Run("没有找到单元（产品不对 / 模板匹配阈值太高 / 旋转范围或镜像未开）") { Foreground = Brush.Parse("#d08000") });
+            }
+            var dirs = (r.Units ?? []).Select(u => Math.Round(u.Angle)).Distinct().Order().ToList();
+            if (dirs.Count > 0 && !(dirs.Count == 1 && dirs[0] == 0))
+            {
+                inl.Add(new LineBreak());
+                inl.Add(new Run($"单元方向: {string.Join("、", dirs.Take(8))}°{(dirs.Count > 8 ? "…" : "")}"));
+            }
         }
         if (r.Error != null)
         {

@@ -324,7 +324,7 @@ class MainWindow(QMainWindow):
         self.wire_info.setWordWrap(True)
         self.wire_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         v.addWidget(self.wire_info)
-        self.wire_table = self._table(['单元', '线号', '长度µm', 'sweep%', '端点偏移µm', 'z', '判定'], stretch=6)
+        self.wire_table = self._table(['单元', '线号', '长度px', 'sweep%', '端点偏移px', 'z', '判定'], stretch=6)
         self.wire_table.itemSelectionChanged.connect(self._wire_row_selected)
         v.addWidget(self.wire_table, 1)
         row = QHBoxLayout()
@@ -629,6 +629,11 @@ class MainWindow(QMainWindow):
             wires = r.get('wires') or []
             lines.append('产品: %s   单元 %d   导线 %d   NG %d' % (r.get('product') or '-', len(r.get('units') or []),
                                                           len(wires), sum(1 for w in wires if w['flags'])))
+            if not r.get('units'):
+                lines.append('<span style="color:#d08000">没有找到单元（产品不对 / 模板匹配阈值太高 / 旋转范围或镜像未开）</span>')
+            angles = sorted({round(u.get('angle', 0)) for u in r.get('units') or []})
+            if angles != [0] and angles:
+                lines.append('单元方向: %s°' % ('、'.join('%d' % v for v in angles[:8]) + ('…' if len(angles) > 8 else '')))
         if r.get('error'):
             lines.append('<span style="color:red">检测出错: %s</span>' % r['error'])
         if r.get('verdict'):
@@ -690,30 +695,33 @@ class MainWindow(QMainWindow):
     def _fill_wire_table(self):
         wires = self._wires()
         rec = self.session.rec(self.current) if self.session and self.current else {}
-        um = rec.get('pixel_um') or 1
         self.wire_table.blockSignals(True)
         self.wire_table.setRowCount(len(wires))
         for r, w in enumerate(wires):
-            vals = [str(w['unit'] + 1), str(w['index'] + 1), '%.0f' % (w['l'] * um), '%.1f' % w['sweep_pct'],
-                    '%.1f' % (w['shift_px'] * um), '%.1f' % w['z_all'],
+            vals = [str(w['unit'] + 1), str(w['index'] + 1), '%.0f' % w['l'], '%.1f' % w['sweep_pct'],
+                    '%.1f' % w['shift_px'], '%.1f' % w['z_all'],
                     report.flag_text(w['flags']) if w['flags'] else '正常']
             for j, v in enumerate(vals):
                 item = QTableWidgetItem(v)
                 item.setData(ROLE_ID, r)
                 if j == 6:
-                    item.setToolTip('z 分段 %s  z_ball %.1f  起点缺口 %.0f µm  终点缺口 %.0f µm' % (
-                        ' '.join('%.1f' % z for z in w['z_seg']), w['z_ball'], w['gap1'] * um, w['gap2'] * um))
+                    item.setToolTip('z 分段 %s  z_ball %.1f  起点缺口 %.0f px  终点缺口 %.0f px' % (
+                        ' '.join('%.1f' % z for z in w['z_seg']), w['z_ball'], w['gap1'], w['gap2']))
                 if w['flags']:
                     item.setForeground(QColor('#e02424'))
                 self.wire_table.setItem(r, j, item)
         self.wire_table.blockSignals(False)
         if not wires:
-            self.wire_info.setText('本图还没有检测结果；选择产品后点“开始检测”。' if self.current else '')
+            self.wire_info.setText('' if not self.current else
+                                   '本图没有找到单元：检查产品是否选对、模板匹配阈值、是否镜像 / 旋转（产品参数）。'
+                                   if rec.get('detected_at') and not rec.get('error') else
+                                   '本图还没有检测结果；选择产品后点“开始检测”。')
         else:
             bad = sum(1 for w in wires if w['flags'])
-            self.wire_info.setText('产品 <b>%s</b>，%d 个单元，导线 <b>%d</b> 根，其中 <b style="color:#e02424">%d</b> 根 NG。'
-                                   '像素 %.2f µm。' % (rec.get('product') or '-', len(rec.get('units') or []),
-                                                     len(wires), bad, um))
+            mirrored = sum(1 for u in rec.get('units') or [] if u.get('mirror'))
+            self.wire_info.setText('产品 <b>%s</b>，%d 个单元%s，导线 <b>%d</b> 根，其中 <b style="color:#e02424">%d</b> 根 NG。'
+                                   '长度单位：像素。' % (rec.get('product') or '-', len(rec.get('units') or []),
+                                                    '（%d 个镜像）' % mirrored if mirrored else '', len(wires), bad))
 
     def _select_wire_row(self, index):
         """A wire clicked on the image: show its row (and the statistics tab) without moving the view."""
