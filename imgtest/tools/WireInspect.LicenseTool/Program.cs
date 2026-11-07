@@ -13,8 +13,8 @@ using WireInspect.Core;
 static class Program
 {
     static readonly string KeyDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "license_keys"));
-    static string KeyPath => Path.Combine(KeyDir, "vendor_ed25519.key");
-    static string IssuedDir => Path.Combine(KeyDir, "issued");
+    public static string KeyPath => Path.Combine(KeyDir, "vendor_ed25519.key");
+    public static string IssuedDir => Path.Combine(KeyDir, "issued");
     const string MachineRe = @"^[0-9A-F]{4}(-[0-9A-F]{4}){3}$";
 
     static int Main(string[] args)
@@ -56,8 +56,12 @@ static class Program
         var keyPath = Opt("--key") ?? KeyPath;
         var outFile = Opt("--out");
 
+        if (argsList.Count == 0)
+            return WireInspect.LicenseTool.GuiApp.Run(args);  // no args -> 注册机窗口
+        if (argsList.Contains("--cli") && machine == null && customer == null && days == null && expiresArg == null)
+            return Interactive(keyPath, outFile);           // --cli -> 控制台交互
         if (machine == null && customer == null && days == null && expiresArg == null)
-            return Interactive(keyPath, outFile);
+            return Exit("无操作：不带参数打开注册机窗口；--cli 控制台交互；或 --machine/--customer/--days 直接签发");
 
         if (machine == null || customer == null || (days == null && expiresArg == null))
             return Exit("需要 --machine、--customer 以及 --days 或 --expires（或不带参数进入交互模式）");
@@ -99,6 +103,54 @@ static class Program
         return 0;
     }
 
+    /// <summary>GUI-friendly variant of LoadKey: returns the key or null with an error message.</summary>
+    public static byte[]? TryLoadKey(string path, out string error)
+    {
+        error = "";
+        if (!File.Exists(path))
+        {
+            error = $"未找到签名私钥: {path}\n请把 vendor_ed25519.key 放到该位置（或用 --key 指定）；没有的话先运行 --keygen --write 并更新公钥。";
+            return null;
+        }
+        byte[] secret;
+        try { secret = Convert.FromHexString(File.ReadAllText(path).Trim()); }
+        catch (Exception) { error = $"私钥文件无法读取: {path}"; return null; }
+        if (secret.Length != 32 || !Ed25519.PublicKey(secret).SequenceEqual(License.PublicKey))
+        {
+            error = $"私钥与程序内置公钥不匹配: {path}";
+            return null;
+        }
+        return secret;
+    }
+
+    /// <summary>Sign and write the license file; returns its path. GUI/console share this.</summary>
+    public static string IssueLicense(byte[] secret, string machine, string customer, DateOnly expires, string edition,
+        string? outFile = null, string? outDir = null)
+    {
+        var lic = License.Fields.ToDictionary(k => k, k => k switch
+        {
+            "id" => Guid.NewGuid().ToString("N")[..12],
+            "customer" => customer,
+            "machine" => machine,
+            "edition" => edition,
+            "issued" => DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"),
+            "expires" => expires.ToString("yyyy-MM-dd"),
+            _ => "",
+        });
+        var text = License.Sign(lic, secret);
+        License.Parse(text, machine);          // round-trip check before writing
+        if (outFile == null)
+        {
+            outDir ??= IssuedDir;
+            Directory.CreateDirectory(outDir);
+            var safe = Regex.Replace(customer, @"[\\/:*?""<>|\s]+", "_");
+            outFile = Path.Combine(outDir, $"license_{safe}_{machine[..4]}_{edition}_{expires:yyyyMMdd}.lic");
+        }
+        File.WriteAllText(outFile, text + "\n");
+        LogIssued(Path.GetDirectoryName(Path.GetFullPath(outFile))!, lic, outFile);
+        return outFile;
+    }
+
     static byte[]? LoadKey(string path)
     {
         if (!File.Exists(path))
@@ -133,28 +185,8 @@ static class Program
     static void Issue(byte[] secret, string machine, string customer, DateOnly expires, string edition,
         string? outFile = null, string? outDir = null)
     {
-        var lic = License.Fields.ToDictionary(k => k, k => k switch
-        {
-            "id" => Guid.NewGuid().ToString("N")[..12],
-            "customer" => customer,
-            "machine" => machine,
-            "edition" => edition,
-            "issued" => DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"),
-            "expires" => expires.ToString("yyyy-MM-dd"),
-            _ => "",
-        });
-        var text = License.Sign(lic, secret);
-        License.Parse(text, machine);          // round-trip check before writing
-        if (outFile == null)
-        {
-            outDir ??= IssuedDir;
-            Directory.CreateDirectory(outDir);
-            var safe = Regex.Replace(customer, @"[\\/:*?""<>|\s]+", "_");
-            outFile = Path.Combine(outDir, $"license_{safe}_{machine[..4]}_{edition}_{expires:yyyyMMdd}.lic");
-        }
-        File.WriteAllText(outFile, text + "\n");
-        LogIssued(Path.GetDirectoryName(Path.GetFullPath(outFile))!, lic, outFile);
-        Console.WriteLine($"\n已生成授权文件: {Path.GetFullPath(outFile)}");
+        var outFile2 = IssueLicense(secret, machine, customer, expires, edition, outFile, outDir);
+        Console.WriteLine($"\n已生成授权文件: {Path.GetFullPath(outFile2)}");
         Console.WriteLine($"  客户 {customer} · {License.Editions.GetValueOrDefault(edition, edition)} · 机器码 {machine} · 有效期至 {expires:yyyy-MM-dd}（含当天）");
     }
 

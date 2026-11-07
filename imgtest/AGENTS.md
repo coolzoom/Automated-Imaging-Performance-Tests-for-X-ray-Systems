@@ -24,7 +24,7 @@
 - GUI: `dotnet run --project src/WireInspect.App [folder]`
 - CLI: `dotnet run --project src/WireInspect.Cli -- detect <img> --product 2_8_4_demo [--simulate 1 4 7]`
 - Windows build: `dotnet publish src/WireInspect.App -c Release -r win-x64 --self-contained` (copy `products/` next to the exe)
-- License issuer (注册机): `dotnet run --project tools/WireInspect.LicenseTool` (interactive) or `--machine/--customer/--days`;
+- License issuer (注册机): `dotnet run --project tools/WireInspect.LicenseTool` (Avalonia GUI; `--cli` = console interactive) or `--machine/--customer/--days`;
   `--keygen --write` makes a new keypair (public key then goes into `License.PublicKey`); `--mymachine` prints this PC's code.
   Private key lives in `../license_keys/` (repo-external, git-ignored) — never commit it.
 

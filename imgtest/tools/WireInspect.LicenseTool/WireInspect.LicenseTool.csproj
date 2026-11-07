@@ -7,6 +7,9 @@
     <AssemblyName>WireInspect.LicenseTool</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
     <ProjectReference Include="../../src/WireInspect.Core/WireInspect.Core.csproj" />
   </ItemGroup>
 </Project>
