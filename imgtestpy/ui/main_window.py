@@ -108,7 +108,6 @@ class MainWindow(QMainWindow):
         self.act_recent.setToolTip('重新打开最近用过的文件夹')
         self.recent_menu = QMenu(self)
         self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
-        self.act_recent.setMenu(self.recent_menu)
         self.act_start = QAction('开始检测', self, triggered=lambda: self.start_detection(False))
         self.act_stop = QAction('停止检测', self, triggered=self.stop_detection)
         self.act_rerun = QAction('重新检测', self, triggered=lambda: self.start_detection(True))
@@ -1049,6 +1048,7 @@ class MainWindow(QMainWindow):
         if not rels:
             self.statusBar().showMessage('所有图片已检测完毕；如需重新检测请点“重新检测全部”。', 5000)
             return
+        self._batch_rels = rels
         self.worker = BatchWorker(s.root, rels, self.product.dir, int(self.cfg.get('workers') or 0), self)
         self.worker.started.connect(self._on_started)
         self.worker.result.connect(self._on_result)
@@ -1105,12 +1105,14 @@ class MainWindow(QMainWindow):
         self._update_counts()
         self._apply_filter()
         self.statusBar().showMessage('检测完成' if finished else '检测已停止，可再次点“开始检测”继续', 6000)
-        if finished and busy:
-            ng = sum(1 for rel in busy if self.session.status(rel) in (SUSPECT, FAIL))
+        rels = getattr(self, '_batch_rels', None) or []
+        self._batch_rels = []
+        if finished and rels:
+            ng = sum(1 for rel in rels if self.session.status(rel) in (SUSPECT, FAIL))
             if ng:
                 self.filter.setCurrentIndex(1)   # 疑似缺陷
             QMessageBox.information(self, '检测完成',
-                                    '本次检测 %d 张，其中 %d 张发现问题（疑似缺陷）' % (len(busy), ng))
+                                    '本次检测 %d 张，其中 %d 张发现问题（疑似缺陷）' % (len(rels), ng))
 
     def stop_detection(self):
         if self.worker:
