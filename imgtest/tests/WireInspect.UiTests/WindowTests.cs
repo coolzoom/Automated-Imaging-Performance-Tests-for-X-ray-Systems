@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -115,6 +116,12 @@ public class WindowTests
         Assert.Equal(2 + 1, texts.Count);   // lotA once, gone (disabled), 清除最近记录
         Assert.StartsWith("lotA", texts[0]);
         Assert.Contains("（不存在）", texts[1]);
+
+        // clicking a menu entry must open that folder
+        ((MenuFlyout)recent.Flyout!).Items.OfType<MenuItem>().First(i => i.Header!.ToString()!.StartsWith("lotA"))
+            .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("lotA", w.Title);
 
         await w.OpenFolderAsync(b);
         texts = MenuTexts(recent);

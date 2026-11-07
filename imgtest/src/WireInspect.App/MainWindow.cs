@@ -301,6 +301,11 @@ public sealed class MainWindow : Window
         _btnOpen.Click += async (_, _) => await PickFolder();
         _btnRecent.Flyout = new MenuFlyout();
         ((MenuFlyout)_btnRecent.Flyout).Opening += (_, _) => FillRecent();
+        _btnRecent.Click += (_, _) =>
+        {
+            FillRecent();
+            ((MenuFlyout)_btnRecent.Flyout!).ShowAt(_btnRecent);
+        };
         _btnStart.Click += async (_, _) => await StartDetection(false);
         _btnRerun.Click += async (_, _) => await StartDetection(true);
         _btnStop.Click += (_, _) => { _detectCts?.Cancel(); _btnStop.IsEnabled = false; Status("正在停止…"); };
