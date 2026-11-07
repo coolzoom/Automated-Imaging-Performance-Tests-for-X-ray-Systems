@@ -1,6 +1,7 @@
 """Paths, program settings (imgtest/config.json, shared with the C# version) and defect types."""
 import json
 import os
+import sys
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -61,3 +62,40 @@ def load_config():
 
 def save_config(cfg):
     save_json(CONFIG_PATH, cfg)
+
+
+RECENT_MAX = 10
+
+
+def update_config(**changes):
+    """Change settings on the file as it is now: config.json is shared with the C# version (AppConfig.Update),
+    so saving a copy loaded at start-up would wipe what it recorded meanwhile."""
+    cfg = load_config()
+    cfg.update(changes)
+    save_config(cfg)
+    return cfg
+
+
+def norm_path(p):
+    """Absolute path without a trailing separator: 'a/b/' and 'a/b' are the same folder (AppConfig.NormPath)."""
+    return os.path.normpath(os.path.abspath(p))
+
+
+def recent_folders(cfg=None):
+    """Recent folders from the file, normalised, newest first, each once (AppConfig.Recent)."""
+    out, seen = [], set()
+    for p in (cfg or load_config()).get('recent_folders') or []:
+        if not isinstance(p, str) or not p.strip():
+            continue
+        p = norm_path(p)
+        key = p if sys.platform.startswith('linux') else p.lower()   # macOS / Windows folders ignore case
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out[:RECENT_MAX]
+
+
+def add_recent(path):
+    cfg = load_config()
+    cfg['recent_folders'] = recent_folders(dict(cfg, recent_folders=[path] + list(cfg.get('recent_folders') or [])))
+    save_config(cfg)

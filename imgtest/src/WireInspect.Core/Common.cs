@@ -54,8 +54,38 @@ public sealed class AppConfig
     public string Product { get; set; } = "";
     public int Workers { get; set; }
 
+    public const int RecentMax = 10;
+
     public static AppConfig Load() => Json.Load<AppConfig>(AppPaths.Config);
     public void Save() => Json.Save(AppPaths.Config, this);
+
+    /// <summary>Change one setting on the file as it is now: config.json is shared with the Python version (and
+    /// other windows), so saving a copy loaded at start-up would wipe what they recorded meanwhile.</summary>
+    public static AppConfig Update(Action<AppConfig> change)
+    {
+        var c = Load();
+        change(c);
+        c.Save();
+        return c;
+    }
+
+    /// <summary>Absolute path without a trailing separator: "a/b/" and "a/b" are the same folder.</summary>
+    public static string NormPath(string p)
+    {
+        var full = Path.GetFullPath(p);
+        var trimmed = full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return trimmed.Length == 0 || trimmed.EndsWith(':') ? full : trimmed;
+    }
+
+    /// <summary>Recent folders, normalised, newest first, each once.</summary>
+    public List<string> Recent() => RecentFolders.Where(p => !string.IsNullOrWhiteSpace(p)).Select(NormPath)
+        .Distinct(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase).Take(RecentMax).ToList();
+
+    public static void AddRecent(string path) => Update(c =>
+    {
+        c.RecentFolders = [path, .. c.RecentFolders];
+        c.RecentFolders = c.Recent();
+    });
 }
 
 public static class DefectTypes

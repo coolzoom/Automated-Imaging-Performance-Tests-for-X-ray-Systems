@@ -1,34 +1,36 @@
 {
   "name": "2_8_4_demo",
-  "pixel_um": 10,
   "tpl_size": [
-    220,
-    150
+    324,
+    143
   ],
   "wires": [
     {
       "p1": [
-        79,
-        69.6
+        166.8,
+        73.8
       ],
       "p2": [
-        141,
-        71
-      ],
-      "length": 62.01580443725615
+        241.6,
+        73.5
+      ]
     }
   ],
   "match_thr": 0.6,
   "polarity": "dark",
-  "wire_diam_um": 25,
-  "corridor_um": 70,
-  "end_tol_um": 100,
-  "gap_max_um": 80,
-  "shift_max_um": 35,
+  "wire_width_px": 2.5,
+  "corridor_px": 7,
+  "end_tol_px": 10,
+  "gap_max_px": 8,
+  "shift_max_px": 3.5,
   "sweep_max_pct": 6,
   "z_missing": 6,
   "z_seg": 2.5,
   "z_ball": 2.5,
   "n_seg": 5,
+  "max_angle_deg": 180,
+  "local_align": true,
+  "align_search_px": 5,
+  "allow_mirror": true,
   "note": ""
 }

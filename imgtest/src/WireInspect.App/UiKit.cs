@@ -19,7 +19,7 @@ public sealed class SimpleTable : DockPanel
     public SimpleTable(string[] headers, string columns)
     {
         _columns = columns;
-        var head = new Grid { ColumnDefinitions = ColumnDefinitions.Parse(columns), Background = Brush.Parse("#eef1f5") };
+        var head = new Grid { ColumnDefinitions = ColumnDefinitions.Parse(columns), Background = Brush.Parse("#1a3357") };
         for (int i = 0; i < headers.Length; i++)
             head.Children.Add(new TextBlock { Text = headers[i], FontWeight = FontWeight.SemiBold, Margin = new Thickness(6, 3), [Grid.ColumnProperty] = i });
         SetDock(head, Dock.Top);
@@ -29,11 +29,15 @@ public sealed class SimpleTable : DockPanel
             var g = new Grid { ColumnDefinitions = ColumnDefinitions.Parse(_columns) };
             if (row == null) return g;
             for (int i = 0; i < row.Cells.Length; i++)
-                g.Children.Add(new TextBlock
+            {
+                var tb = new TextBlock
                 {
-                    Text = row.Cells[i], Foreground = row.Colors.ElementAtOrDefault(i) ?? Brushes.Black,
+                    Text = row.Cells[i],
                     TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 4, 0), [Grid.ColumnProperty] = i,
-                });
+                };
+                if (row.Colors.ElementAtOrDefault(i) is { } fg) tb.Foreground = fg;
+                g.Children.Add(tb);
+            }
             if (row.Tip != null) ToolTip.SetTip(g, row.Tip);
             return g;
         });

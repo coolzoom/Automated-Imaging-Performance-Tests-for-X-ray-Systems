@@ -8,6 +8,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using OpenCvSharp;
@@ -30,7 +31,6 @@ public sealed class MainWindow : Window
         ("有未处理候选框", Pending),
     ];
     const string WireOk = "#2ee6ff", WireBad = "#ff4d4f";
-    const int RecentMax = 10;
 
     readonly AppConfig _cfg = AppConfig.Load();
     Session? _session;
@@ -55,7 +55,7 @@ public sealed class MainWindow : Window
     readonly Button _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct;
     readonly ComboBox _productCombo = new() { MinWidth = 150 };
     readonly CheckBox _chkFollow = new() { Content = "自动显示最新", IsChecked = true };
-    readonly TextBox _operator = new() { Width = 120 };
+    readonly TextBox _operator = new();
     readonly ComboBox _filter = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     readonly TreeView _tree = new();
     readonly ImageViewer _viewer = new();
@@ -88,6 +88,7 @@ public sealed class MainWindow : Window
         Width = 1640;
         Height = 960;
         WindowState = WindowState.Maximized;
+        Background = Brush.Parse("#0e2138");
         _btnOpen = Icons.ToolButton("open", "导入文件夹");
         _btnRecent = Icons.ToolButton("recent", "最近文件夹", "重新打开最近用过的文件夹");
         _btnStart = Icons.ToolButton("start", "开始检测", "检测还没有结果的图片");
@@ -118,20 +119,34 @@ public sealed class MainWindow : Window
     // ------------------------------------------------------------------ layout
     Control Build()
     {
-        var tb = new WrapPanel { Margin = new Thickness(4, 2) };
-        Control Sep() => new Border { Width = 1, Height = 24, Background = Brush.Parse("#d0d4da"), Margin = new Thickness(6, 0) };
-        TextBlock Label(string t) => new() { Text = t, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
-        foreach (var c in new Control[] { _btnOpen, _btnRecent, Sep(), _btnStart, _btnStop, _btnRerun, _btnClear, Sep(), _btnReport, Sep(),
-                     Label("产品:"), _productCombo, _btnNewProduct, _btnEditProduct, Sep(), _chkFollow, Sep(), Label("操作员:"), _operator })
+        // left: control stack + filter + tree + legend (no top toolbar)
+        Control Sep() => new Border { Height = 1, Background = Brush.Parse("#274a75"), Margin = new Thickness(0, 5) };
+        TextBlock Label(string t) => new() { Text = t, Foreground = Brush.Parse("#8fa8c8"), Margin = new Thickness(2, 5, 0, 2) };
+        UniformGrid Pair(params Control[] cs)
         {
-            c.VerticalAlignment = VerticalAlignment.Center;
-            tb.Children.Add(c);
+            var g = new UniformGrid { Columns = cs.Length };
+            foreach (var c in cs) { c.Margin = new Thickness(1); g.Children.Add(c); }
+            return g;
         }
+        var logo = new Image
+        {
+            Source = new Bitmap(AssetLoader.Open(new Uri("avares://WireInspect/Assets/logo.png"))),
+            Stretch = Stretch.Uniform, Margin = new Thickness(0, 4, 0, 8),
+        };
+        var side = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 0, 6) };
+        foreach (var c in new Control[] { logo, Pair(_btnOpen, _btnRecent), Sep(), Pair(_btnStart, _btnStop), _btnRerun, Sep(), _btnReport, Sep(),
+                     Label("产品"), _productCombo, Pair(_btnNewProduct, _btnEditProduct), Sep(), Label("操作员"), _operator })
+        {
+            c.HorizontalAlignment = HorizontalAlignment.Stretch;
+            side.Children.Add(c);
+        }
+        foreach (var b in new Button[] { _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct })
+            b.HorizontalContentAlignment = HorizontalAlignment.Left;
         _operator.Text = _cfg.Operator;
 
-        // left: filter + tree + legend
         foreach (var (name, _) in Filters) _filter.Items.Add(name);
         _filter.SelectedIndex = 0;
+        var top = new StackPanel { Children = { side, _filter } };
         var legend = new WrapPanel { Margin = new Thickness(2, 4) };
         foreach (var (k, v) in Session.StatusText)
             legend.Children.Add(new TextBlock
@@ -140,11 +155,11 @@ public sealed class MainWindow : Window
                 Inlines = [new Run("● ") { Foreground = Brush.Parse(Session.StatusColors[k]) }, new Run(v)],
             });
         var left = new DockPanel { Margin = new Thickness(4) };
-        DockPanel.SetDock(_filter, Dock.Top);
+        DockPanel.SetDock(top, Dock.Top);
         DockPanel.SetDock(legend, Dock.Bottom);
-        left.Children.Add(_filter);
+        left.Children.Add(top);
         left.Children.Add(legend);
-        left.Children.Add(new Border { BorderBrush = Brush.Parse("#d0d4da"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 4), Child = _tree });
+        left.Children.Add(new Border { BorderBrush = Brush.Parse("#274a75"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 4), Child = _tree });
 
         // center: mode bar, banner, viewer, thumbnails
         var bar = new DockPanel { Margin = new Thickness(4, 2) };
@@ -158,6 +173,11 @@ public sealed class MainWindow : Window
         }
         modes.Children.Add(new Border { Width = 16 });
         modes.Children.Add(_chkMarks);
+        modes.Children.Add(new Border { Width = 16 });
+        _btnClear.VerticalAlignment = VerticalAlignment.Center;
+        modes.Children.Add(_btnClear);
+        _chkFollow.VerticalAlignment = VerticalAlignment.Center;
+        modes.Children.Add(_chkFollow);
         var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         foreach (var (t, fn) in new (string, Action)[] { ("适应窗口(0)", _viewer.Fit), ("1:1 (1)", _viewer.ActualSize),
                      ("放大", () => _viewer.Zoom(1.25)), ("缩小", () => _viewer.Zoom(0.8)) })
@@ -177,7 +197,7 @@ public sealed class MainWindow : Window
         ScrollViewer.SetVerticalScrollBarVisibility(_thumbs, ScrollBarVisibility.Disabled);
         var centerGrid = new Grid { RowDefinitions = RowDefinitions.Parse("*,4,Auto") };
         centerGrid.Children.Add(_viewer);
-        centerGrid.Children.Add(new GridSplitter { [Grid.RowProperty] = 1, ResizeDirection = GridResizeDirection.Rows, Background = Brush.Parse("#e3e6ea") });
+        centerGrid.Children.Add(new GridSplitter { [Grid.RowProperty] = 1, ResizeDirection = GridResizeDirection.Rows, Background = Brush.Parse("#1c3a61") });
         _thumbs[Grid.RowProperty] = 2;
         centerGrid.Children.Add(_thumbs);
         var center = new DockPanel();
@@ -236,10 +256,10 @@ public sealed class MainWindow : Window
         }
         var verdictBox = new Border
         {
-            BorderBrush = Brush.Parse("#d0d4da"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(6),
+            BorderBrush = Brush.Parse("#274a75"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(6),
             Child = new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "判定", FontWeight = FontWeight.SemiBold }, verdictRow, _btnClearVerdict, _chkAutoNext, new TextBlock { Text = "备注:" }, _comment } },
         };
-        var keys = new TextBlock { Text = "快捷键: P/F 判定, ←/→ 上/下一张, 空格 下一张未复核,\nB 框选, A 确认, X 误报, 0 适应, 1 原尺寸", Foreground = Brush.Parse("#555"), FontSize = 12, Margin = new Thickness(0, 6, 0, 0) };
+        var keys = new TextBlock { Text = "快捷键: P/F 判定, ←/→ 上/下一张, 空格 下一张未复核,\nB 框选, A 确认, X 误报, 0 适应, 1 原尺寸", Foreground = Brush.Parse("#8fa8c8"), FontSize = 12, Margin = new Thickness(0, 6, 0, 0) };
         var rightBottom = new StackPanel { Children = { verdictBox, keys } };
         var right = new DockPanel { Margin = new Thickness(4) };
         DockPanel.SetDock(_info, Dock.Top);
@@ -250,24 +270,21 @@ public sealed class MainWindow : Window
 
         var main = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("300,4,*,4,360") };
         main.Children.Add(left);
-        main.Children.Add(new GridSplitter { [Grid.ColumnProperty] = 1, Background = Brush.Parse("#e3e6ea") });
+        main.Children.Add(new GridSplitter { [Grid.ColumnProperty] = 1, Background = Brush.Parse("#1c3a61") });
         center[Grid.ColumnProperty] = 2;
         main.Children.Add(center);
-        main.Children.Add(new GridSplitter { [Grid.ColumnProperty] = 3, Background = Brush.Parse("#e3e6ea") });
+        main.Children.Add(new GridSplitter { [Grid.ColumnProperty] = 3, Background = Brush.Parse("#1c3a61") });
         right[Grid.ColumnProperty] = 4;
         main.Children.Add(right);
 
-        var statusBar = new DockPanel { Background = Brush.Parse("#f3f4f6"), Height = 26 };
+        var statusBar = new DockPanel { Background = Brush.Parse("#0b1c33"), Height = 26 };
         var perm = new StackPanel { Orientation = Orientation.Horizontal, Children = { _counts, _progressText, _progress } };
         DockPanel.SetDock(perm, Dock.Right);
         statusBar.Children.Add(perm);
         statusBar.Children.Add(_status);
 
         var root = new DockPanel();
-        var toolbar = new Border { Background = Brush.Parse("#f7f8fa"), BorderBrush = Brush.Parse("#d0d4da"), BorderThickness = new Thickness(0, 0, 0, 1), Child = tb };
-        DockPanel.SetDock(toolbar, Dock.Top);
         DockPanel.SetDock(statusBar, Dock.Bottom);
-        root.Children.Add(toolbar);
         root.Children.Add(statusBar);
         root.Children.Add(main);
         return root;
@@ -300,7 +317,7 @@ public sealed class MainWindow : Window
         _operator.LostFocus += (_, _) =>
         {
             _cfg.Operator = _operator.Text ?? "";
-            _cfg.Save();
+            AppConfig.Update(c => c.Operator = _cfg.Operator);
             if (_session != null) { _session.Data.Operator = _cfg.Operator; _session.Dirty = true; }
         };
         _filter.SelectionChanged += (_, _) => ApplyFilter();
@@ -337,7 +354,6 @@ public sealed class MainWindow : Window
         {
             _detectCts?.Cancel();
             _session?.Save();
-            _cfg.Save();
         };
     }
 
@@ -427,7 +443,7 @@ public sealed class MainWindow : Window
                 _product?.Template?.Dispose();
                 _product = p;
                 _cfg.Product = name;
-                _cfg.Save();
+                AppConfig.Update(c => c.Product = name);
                 ToolTip.SetTip(_productCombo, $"{p.Name}：{p.Wires.Count} 根线/单元，模板 {p.TplSize[0]}×{p.TplSize[1]}");
             }
             catch (Exception e)
@@ -494,20 +510,20 @@ public sealed class MainWindow : Window
 
     void AddRecent(string path)
     {
-        _cfg.RecentFolders = [path, .. _cfg.RecentFolders.Where(p => !string.Equals(Path.GetFullPath(p), Path.GetFullPath(path), StringComparison.Ordinal)).Take(RecentMax - 1)];
-        _cfg.Save();
+        AppConfig.AddRecent(path);
     }
 
     void FillRecent()
     {
         var m = (MenuFlyout)_btnRecent.Flyout!;
         m.Items.Clear();
-        if (_cfg.RecentFolders.Count == 0)
+        var recent = AppConfig.Load().Recent();   // read again: the Python version may have added folders
+        if (recent.Count == 0)
         {
             m.Items.Add(new MenuItem { Header = "（暂无记录）", IsEnabled = false });
             return;
         }
-        foreach (var p in _cfg.RecentFolders)
+        foreach (var p in recent)
         {
             bool ok = Directory.Exists(p);
             var mi = new MenuItem { Header = $"{Path.GetFileName(p.TrimEnd('/', '\\'))}    {p}{(ok ? "" : "（不存在）")}", IsEnabled = ok && !_running };
@@ -516,7 +532,7 @@ public sealed class MainWindow : Window
         }
         m.Items.Add(new Separator());
         var clr = new MenuItem { Header = "清除最近记录" };
-        clr.Click += (_, _) => { _cfg.RecentFolders = []; _cfg.Save(); };
+        clr.Click += (_, _) => AppConfig.Update(c => c.RecentFolders = []);
         m.Items.Add(clr);
     }
 

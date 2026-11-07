@@ -9,7 +9,7 @@ public sealed class App : Application
 {
     public override void Initialize()
     {
-        RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Light;
+        RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
         Styles.Add(new FluentTheme());
     }
 

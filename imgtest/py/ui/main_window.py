@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QC
                                QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from core import report
-from core.config import DEFECT_TYPES, PRODUCTS_DIR, load_config, save_config, type_color
+from core.config import (DEFECT_TYPES, PRODUCTS_DIR, add_recent, load_config, recent_folders, type_color,
+                         update_config)
 from core.defect import Defect
 from core.imgio import read_gray
 from core.product import Product, list_products
@@ -24,7 +25,6 @@ PENDING_FILTER = 'pending'
 FILTERS = [('全部', None), ('疑似缺陷', {SUSPECT}), ('FAIL', {FAIL}), ('PASS', {PASS}),
            ('未复核', {UNCHECKED, AUTO_OK, SUSPECT}), ('未检出候选（待复核）', {AUTO_OK}),
            ('有未处理候选框', PENDING_FILTER)]
-RECENT_MAX = 10
 ROLE_REL = Qt.UserRole
 ROLE_ID = Qt.UserRole + 1
 SPIN_FRAMES = 12
@@ -383,7 +383,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, '产品', '读取产品「%s」失败:\n%s' % (name, e))
             self.cfg['product'] = name
-            save_config(self.cfg)
+            update_config(product=name)
         self.act_edit_product.setEnabled(self.product is not None)
         if self.current:
             self._refresh_result()
@@ -424,19 +424,14 @@ class MainWindow(QMainWindow):
             a.setEnabled(True)
         self.setWindowTitle('%s - %s' % (APP_TITLE, path))
         self._update_counts()
-        self._add_recent(self.session.root)
+        add_recent(self.session.root)
         if self.session.files:
             self.select_rel(self.session.files[0])
-
-    def _add_recent(self, path):
-        rec = [p for p in self.cfg.get('recent_folders', []) if os.path.normpath(p) != os.path.normpath(path)]
-        self.cfg['recent_folders'] = [path] + rec[:RECENT_MAX - 1]
-        save_config(self.cfg)
 
     def _fill_recent_menu(self):
         m = self.recent_menu
         m.clear()
-        rec = self.cfg.get('recent_folders', [])
+        rec = recent_folders()   # read again: the C# version may have added folders
         if not rec:
             m.addAction('（暂无记录）').setEnabled(False)
             return
@@ -449,8 +444,7 @@ class MainWindow(QMainWindow):
         m.addAction('清除最近记录', self._clear_recent)
 
     def _clear_recent(self):
-        self.cfg['recent_folders'] = []
-        save_config(self.cfg)
+        update_config(recent_folders=[])
 
     def clear_marks(self, scope):
         if not self.session or self._busy():
@@ -829,7 +823,7 @@ class MainWindow(QMainWindow):
 
     def _operator_changed(self):
         self.cfg['operator'] = self.operator.text()
-        save_config(self.cfg)
+        update_config(operator=self.cfg['operator'])
         if self.session:
             self.session.data['operator'] = self.operator.text()
             self.session.dirty = True

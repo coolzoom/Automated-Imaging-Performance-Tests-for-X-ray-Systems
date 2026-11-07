@@ -9,7 +9,7 @@ namespace WireInspect.App;
 /// <summary>Toolbar icons (the app-gpt line icons, drawn as vector shapes; nothing to ship).</summary>
 public static class Icons
 {
-    const string Line = "#3a4458";
+    const string Line = "#c9d7ec";
 
     abstract record E(string? Fill, string? Stroke);
     sealed record P(string D, string? Fill = null, string? Stroke = Line) : E(Fill, Stroke);

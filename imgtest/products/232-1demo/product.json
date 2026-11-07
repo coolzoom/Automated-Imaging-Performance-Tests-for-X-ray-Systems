@@ -4,33 +4,33 @@
     307,
     144
   ],
-  "match_thr": 0.29,
-  "polarity": "dark",
-  "wire_width_px": 2.5,
-  "corridor_px": 7.0,
-  "end_tol_px": 10.0,
-  "gap_max_px": 8.0,
-  "shift_max_px": 3.5,
-  "sweep_max_pct": 10.0,
-  "z_missing": 29.0,
-  "z_seg": 14.0,
-  "z_ball": 19.5,
-  "n_seg": 5,
-  "max_angle_deg": 5.0,
-  "local_align": false,
-  "align_search_px": 1.0,
-  "allow_mirror": false,
-  "note": "",
   "wires": [
     {
       "p1": [
         154.2,
-        74.0
+        74
       ],
       "p2": [
         237.2,
-        75.0
+        75
       ]
     }
-  ]
+  ],
+  "match_thr": 0.29,
+  "polarity": "dark",
+  "wire_width_px": 2.5,
+  "corridor_px": 7,
+  "end_tol_px": 10,
+  "gap_max_px": 8,
+  "shift_max_px": 3.5,
+  "sweep_max_pct": 10,
+  "z_missing": 49,
+  "z_seg": 34,
+  "z_ball": 24.5,
+  "n_seg": 5,
+  "max_angle_deg": 5,
+  "local_align": false,
+  "align_search_px": 1,
+  "allow_mirror": false,
+  "note": ""
 }

@@ -29,7 +29,7 @@ public sealed class ProductDialog : Window
     readonly TextBlock _hint = new() { Foreground = Brushes.White, FontSize = 14, TextWrapping = TextWrapping.Wrap };
     readonly Border _hintBar = new() { Background = Brush.Parse("#1f6fd1"), Padding = new Thickness(8, 6) };
     readonly TextBox _name = new();
-    readonly TextBlock _tplInfo = new() { Foreground = Brush.Parse("#555") };
+    readonly TextBlock _tplInfo = new() { Foreground = Brush.Parse("#8fa8c8") };
     readonly ToggleButton _btnBox = new() { Content = "① 框选单元模板" };
     readonly Button _btnAuto = new() { Content = "② 自动找线" };
     readonly ToggleButton _btnAdd = new() { Content = "手动添加(点两点)" };
@@ -143,7 +143,7 @@ public sealed class ProductDialog : Window
         left.Children.Add(_viewer);
         var grid = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,4,400") };
         grid.Children.Add(left);
-        grid.Children.Add(new GridSplitter { [Grid.ColumnProperty] = 1, Background = Brush.Parse("#e3e6ea") });
+        grid.Children.Add(new GridSplitter { [Grid.ColumnProperty] = 1, Background = Brush.Parse("#1c3a61") });
         right[Grid.ColumnProperty] = 2;
         grid.Children.Add(right);
         return grid;

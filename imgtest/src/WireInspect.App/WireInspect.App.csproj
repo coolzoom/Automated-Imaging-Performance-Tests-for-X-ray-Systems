@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AvaloniaResource Include="Assets/**" />
     <ProjectReference Include="../WireInspect.Core/WireInspect.Core.csproj" />
   </ItemGroup>
 
