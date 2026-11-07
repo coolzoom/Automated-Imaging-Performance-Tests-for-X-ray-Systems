@@ -20,7 +20,7 @@
   "polarity": "dark",
   "wire_width_px": 2.5,
   "corridor_px": 7,
-  "end_tol_px": 12,
+  "end_tol_px": 14,
   "gap_max_px": 15,
   "shift_max_px": 7,
   "sweep_max_pct": 6,

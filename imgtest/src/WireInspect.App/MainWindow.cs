@@ -52,7 +52,7 @@ public sealed partial class MainWindow : Window
     bool _running, _loadingProducts;
 
     // controls
-    readonly Button _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct, _btnSettings, _btnMcp;
+    readonly Button _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct, _btnDelProduct, _btnSettings, _btnMcp;
     readonly ComboBox _productCombo = new() { MinWidth = 150 };
     readonly CheckBox _chkFollow = new() { Content = "自动显示最新", IsChecked = true };
     readonly TextBox _operator = new();
@@ -96,8 +96,9 @@ public sealed partial class MainWindow : Window
         _btnRerun = Icons.ToolButton("rerun", "重新检测");
         _btnClear = Icons.ToolButton("clear", "清除标记", "清除当前图片 / 当前子文件夹 / 整个文件夹的所有缺陷标记");
         _btnReport = Icons.ToolButton("report", "保存报告", "整个文件夹的检测与复核结果导出为 CSV（汇总 + 导线明细）");
-        _btnNewProduct = Icons.ToolButton("add", "新建产品", "在当前图片上框选一个单元，自动找线，生成产品配置");
-        _btnEditProduct = Icons.ToolButton("edit", "编辑产品");
+        _btnNewProduct = Icons.ToolButton("add", "新建", "在当前图片上框选一个单元，自动找线，生成产品配置");
+        _btnEditProduct = Icons.ToolButton("edit", "编辑");
+        _btnDelProduct = Icons.ToolButton("del", "删除", "删除当前选中产品的模板与配置（不可恢复）");
         _btnSettings = Icons.ToolButton("gear", "设置", "运行参数（并行线程数）");
         _btnMcp = Icons.ToolButton("mcp", "MCP / AI", "MCP 服务与 AI Agent 一键配置");
         Content = Build();
@@ -138,7 +139,7 @@ public sealed partial class MainWindow : Window
         };
         var productRow = new DockPanel { Margin = new Thickness(0, 5, 0, 2) };
         var productLabel = new TextBlock { Text = "产品", Foreground = Brush.Parse("#8fa8c8"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0) };
-        var productButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { _btnNewProduct, _btnEditProduct } };
+        var productButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { _btnNewProduct, _btnEditProduct, _btnDelProduct } };
         DockPanel.SetDock(productButtons, Dock.Right);
         productRow.Children.Add(productButtons);
         productRow.Children.Add(productLabel);
@@ -181,10 +182,8 @@ public sealed partial class MainWindow : Window
             modes.Children.Add(rb);
         }
         modes.Children.Add(new Border { Width = 16 });
-        var viewOptions = new Button { Content = "显示选项 ▾", Padding = new Thickness(8, 3) };
-        var viewFlyout = new Flyout { Content = new StackPanel { Margin = new Thickness(10), Spacing = 8, Children = { _chkMarks, _chkFollow } } };
-        viewOptions.Click += (_, _) => viewFlyout.ShowAt(viewOptions);
-        modes.Children.Add(viewOptions);
+        _chkMarks.VerticalAlignment = VerticalAlignment.Center;
+        modes.Children.Add(_chkMarks);
         var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         _btnClear.VerticalAlignment = VerticalAlignment.Center;
         zoom.Children.Add(_btnClear);
@@ -311,6 +310,7 @@ public sealed partial class MainWindow : Window
         _btnReport.Click += async (_, _) => await SaveReport();
         _btnNewProduct.Click += async (_, _) => await OpenProductDialog(false);
         _btnEditProduct.Click += async (_, _) => await OpenProductDialog(true);
+        _btnDelProduct.Click += async (_, _) => await DeleteProduct();
         _btnSettings.Click += async (_, _) => await OpenSettings();
         _btnMcp.Click += async (_, _) => await new McpDialog(this).ShowDialog(this);
         _productCombo.SelectionChanged += (_, _) => { if (!_loadingProducts) SelectProduct(_productCombo.SelectedItem as string); };
@@ -412,7 +412,7 @@ public sealed partial class MainWindow : Window
         _btnReport.IsEnabled = _btnClear.IsEnabled = has && !_running;
         _btnOpen.IsEnabled = _btnRecent.IsEnabled = !_running;
         _productCombo.IsEnabled = _btnNewProduct.IsEnabled = !_running;
-        _btnEditProduct.IsEnabled = !_running && _product != null;
+        _btnEditProduct.IsEnabled = _btnDelProduct.IsEnabled = !_running && _product != null;
         foreach (var c in new Control[] { _btnPass, _btnFail, _btnClearVerdict, _btnAccept, _btnReject, _btnDelete, _btnType, _btnDraw, _comment })
             c.IsEnabled = img;
     }
@@ -457,6 +457,33 @@ public sealed partial class MainWindow : Window
         if (_current != null) RefreshDefects();
     }
 
+    async Task DeleteProduct()
+    {
+        var p = _product;
+        if (p == null || _running) return;
+        var dir = Path.GetFullPath(p.Dir);
+        var root = Path.GetFullPath(AppPaths.Products);
+        if (!dir.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            Status($"拒绝删除：产品目录 {dir} 不在产品库内");
+            return;
+        }
+        if (!await Dialogs.Confirm(this, "删除产品", $"确定删除产品 “{p.Name}”？\n模板图片和 product.json 将一并删除，不可恢复。"))
+            return;
+        try
+        {
+            p.Template?.Dispose();
+            _product = null;
+            Directory.Delete(dir, true);
+            LoadProducts(null);
+            Status($"产品 {p.Name} 已删除");
+        }
+        catch (Exception e)
+        {
+            await Dialogs.Info(this, "删除产品", $"删除失败：{e.Message}");
+        }
+    }
+
     async Task OpenSettings()
     {
         var workers = new NumericUpDown { Minimum = 0, Maximum = 32, Increment = 1, Value = _cfg.Workers, Width = 140, FormatString = "0" };
@@ -471,7 +498,7 @@ public sealed partial class MainWindow : Window
                 Children =
                 {
                     new TextBlock { Text = "并行检测线程数（0 = 自动，CPU 核数 - 1）" },
-                    workers, ok,
+                    workers, _chkFollow, ok,
                 },
             },
         };

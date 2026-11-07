@@ -1,0 +1,40 @@
+{
+  "name": "232-1wire",
+  "tpl_size": [
+    256,
+    110
+  ],
+  "wires": [
+    {
+      "p1": [
+        131.8,
+        50.6
+      ],
+      "p2": [
+        186,
+        53
+      ]
+    }
+  ],
+  "match_thr": 0.75,
+  "polarity": "dark",
+  "wire_width_px": 2.5,
+  "corridor_px": 7,
+  "end_tol_px": 14,
+  "gap_max_px": 15,
+  "shift_max_px": 7,
+  "sweep_max_pct": 6,
+  "z_missing": 6,
+  "z_seg": 2,
+  "z_ball": 1.8,
+  "n_seg": 5,
+  "scale_range": [
+    0.9,
+    1.4
+  ],
+  "max_angle_deg": 0,
+  "local_align": true,
+  "align_search_px": 5,
+  "allow_mirror": false,
+  "note": ""
+}

@@ -1,63 +1,67 @@
 {
-  "name": "232-6",
+  "name": "232-6脚4线",
   "tpl_size": [
-    185,
-    113
+    179,
+    110
   ],
   "wires": [
     {
       "p1": [
-        35,
-        82.8
+        29.7,
+        84
       ],
       "p2": [
-        32.9,
-        31.5
+        28,
+        33
       ]
     },
     {
       "p1": [
-        42,
-        77.8
+        37,
+        78.9
       ],
       "p2": [
-        89.5,
-        35.7
+        72,
+        48
       ]
     },
     {
       "p1": [
-        137.6,
-        61.9
+        138.1,
+        53.6
       ],
       "p2": [
-        96.7,
-        79
+        144.7,
+        93.1
       ]
     },
     {
       "p1": [
-        146.3,
-        54.4
+        130.8,
+        61
       ],
       "p2": [
-        152,
-        94.1
+        107,
+        81
       ]
     }
   ],
   "match_thr": 0.6,
   "polarity": "dark",
-  "wire_width_px": 2.5,
-  "corridor_px": 7,
-  "end_tol_px": 10,
-  "gap_max_px": 8,
-  "shift_max_px": 3.5,
+  "wire_width_px": 2,
+  "corridor_px": 10,
+  "end_tol_px": 14,
+  "gap_max_px": 12,
+  "shift_max_px": 7,
   "sweep_max_pct": 6,
-  "z_missing": 6,
-  "z_seg": 2.5,
-  "z_ball": 2.5,
+  "z_missing": 4,
+  "z_seg": 2,
+  "z_ball": 1.8,
   "n_seg": 5,
+  "scale_range": [
+    0.9,
+    1.4
+  ],
   "max_angle_deg": 180,
   "local_align": true,
   "align_search_px": 5,
