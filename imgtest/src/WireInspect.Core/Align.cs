@@ -163,7 +163,7 @@ public static class Align
         return m;
     }
 
-    static Mat Resize(Mat img, double f)
+    public static Mat Resize(Mat img, double f)
     {
         var d = new Mat();
         Cv2.Resize(img, d, new Size(Math.Max(1, (int)Math.Round(img.Width * f)), Math.Max(1, (int)Math.Round(img.Height * f))),

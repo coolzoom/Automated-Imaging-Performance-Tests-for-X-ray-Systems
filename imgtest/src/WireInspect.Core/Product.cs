@@ -40,6 +40,7 @@ public sealed class Product
     public double ZSeg { get; set; } = 2.5;
     public double ZBall { get; set; } = 2.5;
     public int NSeg { get; set; } = 5;
+    public double[] ScaleRange { get; set; } = [0.9, 1.4];   // camera zoom may differ per picture: [min,max] template scale, scanned only when the normal match finds nothing; [1,1] = off
     public double MaxAngleDeg { get; set; } = 180.0;    // units may lie rotated up to ± this (180 = any direction, 0 = upright only)
     public bool LocalAlign { get; set; } = true;        // per-unit affine correction for distortion
     public double AlignSearchPx { get; set; } = 5.0;    // search range of the per-unit block matching

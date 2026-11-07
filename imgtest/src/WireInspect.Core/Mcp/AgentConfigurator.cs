@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace WireInspect.Mcp;
 
-public enum AgentKind { Cursor, VSCode, ClaudeCode, ClaudeDesktop, Codex, Trae, TraeCN, WorkBuddy }
+public enum AgentKind { Cursor, VSCode, ClaudeCode, ClaudeDesktop, Codex, Trae, TraeCN, WorkBuddy, Devin }
 
 public enum AgentConfigState { NotInstalled, NotConfigured, Configured, Outdated }
 
@@ -67,6 +67,7 @@ public sealed class AgentConfigurator
         AgentKind.Trae => "Trae",
         AgentKind.TraeCN => "Trae CN",
         AgentKind.WorkBuddy => "WorkBuddy",
+        AgentKind.Devin => "Devin",
         _ => kind.ToString()
     };
 
@@ -82,6 +83,9 @@ public sealed class AgentConfigurator
         AgentKind.TraeCN => Path.Combine(_appData, "Trae CN", "User", "mcp.json"),
         // WorkBuddy user-level config (docs: ~/.workbuddy/mcp.json).
         AgentKind.WorkBuddy => Path.Combine(_home, ".workbuddy", "mcp.json"),
+        // Devin CLI user-level MCP config: ~/.config/devin/mcp_config.json (%APPDATA%\devin\ on Windows,
+        // $XDG_CONFIG_HOME/devin/ when set).
+        AgentKind.Devin => Path.Combine(DevinConfigDir(), "mcp_config.json"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
@@ -96,8 +100,13 @@ public sealed class AgentConfigurator
         AgentKind.Trae => Directory.Exists(Path.Combine(_appData, "Trae")) || Directory.Exists(Path.Combine(_home, ".trae")),
         AgentKind.TraeCN => Directory.Exists(Path.Combine(_appData, "Trae CN")) || Directory.Exists(Path.Combine(_home, ".trae-cn")),
         AgentKind.WorkBuddy => Directory.Exists(Path.Combine(_home, ".workbuddy")),
+        AgentKind.Devin => Directory.Exists(DevinConfigDir()) || Directory.Exists(Path.Combine(_home, ".devin")),
         _ => false
     };
+
+    string DevinConfigDir() => OperatingSystem.IsWindows()
+        ? Path.Combine(_appData, "devin")
+        : Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } xdg ? xdg : Path.Combine(_home, ".config"), "devin");
 
     public AgentConfigState Status(AgentKind kind)
     {
@@ -184,6 +193,10 @@ public sealed class AgentConfigurator
         AgentKind.VSCode or AgentKind.ClaudeCode => (
             new JsonObject { ["type"] = "http", ["url"] = GuiUrl },
             new JsonObject { ["type"] = "stdio", ["command"] = Command, ["args"] = Args(HeadlessArgs) }),
+        // Devin mcp_config.json: { "url": ... } or { "command": ..., "args": [...] } — no "type" field.
+        AgentKind.Devin => (
+            new JsonObject { ["url"] = GuiUrl },
+            new JsonObject { ["command"] = Command, ["args"] = Args(HeadlessArgs) }),
         // Stdio only: the GUI entry goes through the stdio-to-HTTP bridge, which every client supports.
         AgentKind.ClaudeDesktop or AgentKind.Trae or AgentKind.TraeCN or AgentKind.WorkBuddy => (
             new JsonObject { ["command"] = Command, ["args"] = Args(BridgeArgs) },

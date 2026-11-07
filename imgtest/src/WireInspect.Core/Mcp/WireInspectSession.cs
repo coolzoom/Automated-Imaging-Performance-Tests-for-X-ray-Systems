@@ -244,6 +244,57 @@ public abstract class WireInspectSession
         return new JsonArray(rows.ToArray());
     }
 
+    /// <summary>Unit-matching diagnosis: top template-match peaks with scores, so an agent can tell whether
+    /// the template is wrong (best ≈ noise) or match_thr is just too high (peaks slightly below it).</summary>
+    public JsonObject ProbeUnits(string? rel, string? product) => OnUi(() =>
+    {
+        var s = RequireSession();
+        var p = product != null ? Product.Load(ProductDir(product)) : RequireProduct();
+        if (p.Template == null) throw new InvalidOperationException("产品没有模板图：重新编辑产品框选模板。");
+        using var g = ImageIO.ReadGray(Path.Combine(s.Root, Rel(rel)));
+        var peaks = Inspector.ProbeUnits(g, p.Template);
+        var units = Inspector.FindUnits(g, p.Template, p.MatchThr);
+        // detection uses the rotated matcher when max_angle_deg > 0 — its score path differs, probe it too
+        int? rotatedUnits = p.MaxAngleDeg > 0
+            ? Align.FindUnitsRotated(g, p.Template, p.MatchThr, p.MaxAngleDeg, Math.Max(2, (int)Math.Round(p.AlignSearchPx)), p.LocalAlign).Count
+            : null;
+        JsonNode? mirrorBest = null;
+        if (p.AllowMirror)
+        {
+            using var flipped = new Mat();
+            Cv2.Flip(p.Template, flipped, FlipMode.Y);
+            var mp = Inspector.ProbeUnits(g, flipped, 1);
+            if (mp.Count > 0) mirrorBest = new JsonObject { ["x"] = (int)mp[0].x, ["y"] = (int)mp[0].y, ["score"] = R3(mp[0].score) };
+        }
+        double best = peaks.Count > 0 ? peaks[0].score : 0;
+        // scale diagnosis: camera zoom differs per picture — scan the product's scale_range when the native match fails
+        JsonNode? scaleBest = null;
+        if (units.Count == 0 && p.ScaleRange is { Length: 2 } sr && Math.Max(sr[0], sr[1]) > Math.Min(sr[0], sr[1]))
+        {
+            double sc = Inspector.BestScale(g, p.Template, p.MatchThr, Math.Min(sr[0], sr[1]), Math.Max(sr[0], sr[1]));
+            using var t = Align.Resize(p.Template, sc);
+            var sp = Inspector.ProbeUnits(g, t, 1);
+            scaleBest = new JsonObject { ["scale"] = sc, ["score"] = sp.Count > 0 ? R3(sp[0].score) : 0 };
+            if (sc != 1) best = Math.Max(best, sp.Count > 0 ? sp[0].score : 0);
+        }
+        var hint = peaks.Count == 0 ? "模板比图片还大或图片为空"
+            : units.Count > 0 && rotatedUnits is > 0 or null ? $"正常：峰值 {best:F2} ≥ 阈值 {p.MatchThr}，找到 {units.Count} 个单元"
+            : units.Count > 0 && rotatedUnits == 0 ? $"正向匹配找到 {units.Count} 个单元但旋转路径(max_angle_deg={p.MaxAngleDeg})为 0：模板内容不适合旋转匹配——把 max_angle_deg 设为 0，或重建模板"
+            : scaleBest != null && scaleBest["scale"]!.GetValue<double>() != 1 ? $"图片放大倍率不同：scale {scaleBest["scale"]} 时峰值 {scaleBest["score"]} ≥ 阈值——scale_range 已覆盖，检测时会自动缩放模板"
+            : best >= 0.5 * p.MatchThr ? $"峰值 {best:F2} 低于 match_thr {p.MatchThr}：模板大致对得上，可把 match_thr 降到 {Math.Floor(best * 20) / 20:F1} 试试（wireinspect_set_product_params）；注意旋转路径阈值可能不同"
+            : $"峰值只有 {best:F2}：模板与这张图对不上——产品不对、放大倍率变了、或 tpl.png 框选区域不对（用 wireinspect_create_product 重建）";
+        return new JsonObject
+        {
+            ["file"] = Rel(rel), ["product"] = p.Name,
+            ["tpl_size"] = new JsonArray(p.Template.Width, p.Template.Height),
+            ["match_thr"] = p.MatchThr, ["max_angle_deg"] = p.MaxAngleDeg, ["allow_mirror"] = p.AllowMirror,
+            ["scale_range"] = new JsonArray(p.ScaleRange[0], p.ScaleRange[1]), ["scale_best"] = scaleBest,
+            ["units_found"] = units.Count, ["rotated_units"] = rotatedUnits, ["best_score"] = R3(best), ["mirror_best"] = mirrorBest,
+            ["peaks"] = new JsonArray(peaks.Select(t => (JsonNode?)new JsonObject { ["x"] = (int)t.x, ["y"] = (int)t.y, ["score"] = R3(t.score) }).ToArray()),
+            ["hint"] = hint,
+        };
+    });
+
     public byte[] RenderPng(string? rel) => OnUi(() =>
     {
         var s = RequireSession();
@@ -365,15 +416,15 @@ public abstract class WireInspectSession
         return new JsonObject { ["product"] = _product?.Name };
     });
 
-    public JsonObject GetProduct() => OnUi(() =>
+    public JsonObject GetProduct(string? productName = null) => OnUi(() =>
     {
-        var p = RequireProduct();
+        var p = productName != null ? Product.Load(ProductDir(productName)) : RequireProduct();
         return (JsonObject)JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(p, Core.Json.Options))!;
     });
 
-    public JsonObject SetProductParams(JsonObject patch) => OnUi(() =>
+    public JsonObject SetProductParams(JsonObject patch, string? productName = null) => OnUi(() =>
     {
-        var p = RequireProduct();
+        var p = productName != null ? Product.Load(ProductDir(productName)) : RequireProduct();
         double D(string k, double cur) => patch[k] is { } v && double.TryParse(v.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : cur;
         bool B(string k, bool cur) => patch[k] is { } v && bool.TryParse(v.ToString(), out var b) ? b : cur;
         string S(string k, string cur) => patch[k]?.GetValue<string>() is { Length: > 0 } s ? s : cur;
@@ -390,6 +441,8 @@ public abstract class WireInspectSession
         p.ZBall = D("z_ball", p.ZBall);
         p.NSeg = (int)D("n_seg", p.NSeg);
         p.MaxAngleDeg = D("max_angle_deg", p.MaxAngleDeg);
+        if (patch["scale_range"] is JsonArray sr && sr.Count == 2)
+            p.ScaleRange = [sr[0]!.GetValue<double>(), sr[1]!.GetValue<double>()];
         p.AlignSearchPx = D("align_search_px", p.AlignSearchPx);
         p.LocalAlign = B("local_align", p.LocalAlign);
         p.AllowMirror = B("allow_mirror", p.AllowMirror);
@@ -405,9 +458,9 @@ public abstract class WireInspectSession
             }).ToList();
         }
         p.Save();
-        AfterProductSaved(p);
+        if (productName == null || productName == _product?.Name) AfterProductSaved(p);
         AfterChange();
-        return GetProduct();
+        return (JsonObject)JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(p, Core.Json.Options))!;
     });
 
     public JsonObject AutoWires(double x, double y, double w, double h, string? rel, string? product) => OnUi(() =>

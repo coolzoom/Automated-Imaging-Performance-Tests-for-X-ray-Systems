@@ -304,6 +304,25 @@ public class AgentConfiguratorTests
     }
 
     [Fact]
+    public void Devin_McpConfig_Uses_Url_And_Command()
+    {
+        using var home = new TempDir();
+        using var appData = new TempDir();
+        var cfg = AgentConfigurator.ForExecutable("/opt/wi/WireInspect", 3918, home.Path, appData.Path);
+        var path = cfg.ConfigPath(AgentKind.Devin);
+        if (OperatingSystem.IsWindows())
+            Assert.Equal(Path.Combine(appData.Path, "devin", "mcp_config.json"), path);
+        else
+            Assert.Equal(Path.Combine(home.Path, ".config", "devin", "mcp_config.json"), path);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        cfg.Configure(AgentKind.Devin);
+        var root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        Assert.Equal("http://127.0.0.1:3918/mcp", root["mcpServers"]?["wireinspect"]?["url"]?.GetValue<string>());
+        var args = root["mcpServers"]!["wireinspect-headless"]!["args"]!.AsArray().Select(a => a!.GetValue<string>());
+        Assert.Contains("--mcp-stdio", args);
+    }
+
+    [Fact]
     public void Stdio_Only_Agents_Bridge_Through_Dotnet()
     {
         using var home = new TempDir();

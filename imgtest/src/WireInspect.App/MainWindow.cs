@@ -182,7 +182,8 @@ public sealed partial class MainWindow : Window
         }
         modes.Children.Add(new Border { Width = 16 });
         var viewOptions = new Button { Content = "显示选项 ▾", Padding = new Thickness(8, 3) };
-        viewOptions.Flyout = new Flyout { Content = new StackPanel { Margin = new Thickness(10), Spacing = 8, Children = { _chkMarks, _chkFollow } } };
+        var viewFlyout = new Flyout { Content = new StackPanel { Margin = new Thickness(10), Spacing = 8, Children = { _chkMarks, _chkFollow } } };
+        viewOptions.Click += (_, _) => viewFlyout.ShowAt(viewOptions);
         modes.Children.Add(viewOptions);
         var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         _btnClear.VerticalAlignment = VerticalAlignment.Center;
@@ -301,28 +302,12 @@ public sealed partial class MainWindow : Window
     void Wire()
     {
         _btnOpen.Click += async (_, _) => await PickFolder();
-        _btnRecent.Flyout = new MenuFlyout();
-        ((MenuFlyout)_btnRecent.Flyout).Opening += (_, _) => FillRecent();
-        _btnRecent.Click += (_, _) =>
-        {
-            FillRecent();
-            ((MenuFlyout)_btnRecent.Flyout!).ShowAt(_btnRecent);
-        };
+        // same pattern as app-csharp-ds MenuTool: build a fresh flyout per click and ShowAt it
+        _btnRecent.Click += (_, _) => BuildRecentFlyout().ShowAt(_btnRecent);
         _btnStart.Click += async (_, _) => await StartDetection(false);
         _btnRerun.Click += async (_, _) => await StartDetection(true);
         _btnStop.Click += (_, _) => { _detectCts?.Cancel(); _btnStop.IsEnabled = false; Status("正在停止…"); };
-        var clear = new MenuFlyout();
-        void AddClear(string text, string scope, Func<bool>? enabled = null)
-        {
-            var mi = new MenuItem { Header = text };
-            mi.Click += async (_, _) => await ClearMarks(scope);
-            clear.Items.Add(mi);
-            if (enabled != null) clear.Opening += (_, _) => mi.IsEnabled = enabled();
-        }
-        AddClear("清除当前图片的所有标记", "image");
-        AddClear("清除当前子文件夹的所有标记", "subfolder", () => _current?.Contains('/') == true);
-        AddClear("清除整个文件夹的所有标记", "folder");
-        _btnClear.Flyout = clear;
+        _btnClear.Click += (_, _) => BuildClearFlyout().ShowAt(_btnClear);
         _btnReport.Click += async (_, _) => await SaveReport();
         _btnNewProduct.Click += async (_, _) => await OpenProductDialog(false);
         _btnEditProduct.Click += async (_, _) => await OpenProductDialog(true);
@@ -553,15 +538,14 @@ public sealed partial class MainWindow : Window
         AppConfig.AddRecent(path);
     }
 
-    void FillRecent()
+    internal MenuFlyout BuildRecentFlyout()   // internal: UI test inspects the items
     {
-        var m = (MenuFlyout)_btnRecent.Flyout!;
-        m.Items.Clear();
+        var m = new MenuFlyout();
         var recent = AppConfig.Load().Recent();   // read again: the Python version may have added folders
         if (recent.Count == 0)
         {
             m.Items.Add(new MenuItem { Header = "（暂无记录）", IsEnabled = false });
-            return;
+            return m;
         }
         foreach (var p in recent)
         {
@@ -574,6 +558,22 @@ public sealed partial class MainWindow : Window
         var clr = new MenuItem { Header = "清除最近记录" };
         clr.Click += (_, _) => AppConfig.Update(c => c.RecentFolders = []);
         m.Items.Add(clr);
+        return m;
+    }
+
+    MenuFlyout BuildClearFlyout()
+    {
+        var m = new MenuFlyout();
+        void AddClear(string text, string scope, Func<bool>? enabled = null)
+        {
+            var mi = new MenuItem { Header = text, IsEnabled = enabled?.Invoke() != false };
+            mi.Click += async (_, _) => await ClearMarks(scope);
+            m.Items.Add(mi);
+        }
+        AddClear("清除当前图片的所有标记", "image");
+        AddClear("清除当前子文件夹的所有标记", "subfolder", () => _current?.Contains('/') == true);
+        AddClear("清除整个文件夹的所有标记", "folder");
+        return m;
     }
 
     void BuildTree()

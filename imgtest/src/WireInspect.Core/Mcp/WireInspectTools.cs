@@ -12,7 +12,7 @@ public static class WireInspectTools
         "典型流程：wireinspect_open_folder 打开文件夹 → wireinspect_list_products / wireinspect_select_product → " +
         "wireinspect_detect（all=true 重检全部，wait_seconds 等待）→ wireinspect_get_status 看进度 → " +
         "wireinspect_list_images / wireinspect_get_result / wireinspect_list_defects 看结果 → " +
-        "wireinspect_render 出标注 PNG。" +
+        "wireinspect_render 出标注 PNG。找不到单元时用 wireinspect_probe_units 看模板匹配峰值（best_score vs match_thr）来定位原因。" +
         "缺陷复核：wireinspect_set_defect_status（accepted/rejected/pending）、wireinspect_change_defect_type、" +
         "wireinspect_add_defect / wireinspect_delete_defect、wireinspect_set_verdict（PASS/FAIL/null 清除）。" +
         "参数：wireinspect_get_product 看当前产品参数，wireinspect_set_product_params 改 product.json（所有长度单位 px），" +
@@ -63,6 +63,11 @@ public static class WireInspectTools
             "单张图片的完整检测结果：单元、每根线指标（z、sweep%、偏移、缺口）、缺陷、判定。",
             Schema(("file", Str("图片相对路径，省略=当前图"), false)),
             a => new McpToolResult(Describe(s.GetResult(Optional(a, "file"))), s.GetResult(Optional(a, "file")))),
+        new("wireinspect_probe_units",
+            "诊断『找不到单元』：对图片跑模板匹配，返回最高的几个峰值分数 + 提示。best_score ≥ match_thr 说明能找到；" +
+            "略低说明阈值太高（可 wireinspect_set_product_params 降 match_thr）；很低说明产品/模板不对（wireinspect_create_product 重建）。",
+            Schema(("file", Str("图片相对路径，省略=当前图"), false), ("product", Str("用该产品模板，省略=当前产品"), false)),
+            a => new McpToolResult(Describe(s.ProbeUnits(Optional(a, "file"), Optional(a, "product"))), s.ProbeUnits(Optional(a, "file"), Optional(a, "product")))),
         new("wireinspect_render",
             "渲染当前（或指定）图片的标注 PNG：单元框、导线、焊点、缺陷框。",
             Schema(("file", Str("图片相对路径，省略=当前图"), false)),
@@ -139,16 +144,17 @@ public static class WireInspectTools
             Schema(("name", Str("产品名"), true)),
             a => new McpToolResult("当前产品 " + Required(a, "name"), s.SelectProduct(Required(a, "name")))),
         new("wireinspect_get_product",
-            "当前产品的全部参数（product.json 内容）。",
-            Schema(),
-            _ => new McpToolResult(Describe(s.GetProduct()), s.GetProduct())),
+            "产品的全部参数（product.json 内容）；product 省略=当前产品。",
+            Schema(("product", Str("产品名，省略=当前产品"), false)),
+            a => new McpToolResult(Describe(s.GetProduct(Optional(a, "product"))), s.GetProduct(Optional(a, "product")))),
         new("wireinspect_set_product_params",
-            "改当前产品参数并写回 product.json：match_thr、polarity(dark/bright)、wire_width_px、corridor_px、" +
+            "改产品参数并写回 product.json：match_thr、polarity(dark/bright)、wire_width_px、corridor_px、" +
             "end_tol_px、gap_max_px、shift_max_px、sweep_max_pct、z_missing、z_seg、z_ball、n_seg、" +
-            "max_angle_deg（0=只正向）、local_align、align_search_px、allow_mirror、note、" +
-            "wires（[{p1:[x,y],p2:[x,y]}]，模板坐标）。之后检测用新参数。",
-            Schema(("patch", new JsonObject { ["type"] = "object", ["description"] = "要改的字段" }, true)),
-            a => new McpToolResult("产品参数已保存", s.SetProductParams(a["patch"] as JsonObject ?? new JsonObject()))),
+            "max_angle_deg（0=只正向）、scale_range [min,max]（放大倍率不同自动缩放模板，[1,1]=关）、local_align、align_search_px、allow_mirror、note、" +
+            "wires（[{p1:[x,y],p2:[x,y]}]，模板坐标）。product 省略=当前产品；之后检测用新参数。",
+            Schema(("patch", new JsonObject { ["type"] = "object", ["description"] = "要改的字段" }, true),
+                   ("product", Str("产品名，省略=当前产品"), false)),
+            a => new McpToolResult("产品参数已保存", s.SetProductParams(a["patch"] as JsonObject ?? new JsonObject(), Optional(a, "product")))),
         new("wireinspect_auto_wires",
             "在图片的 rect 区域内自动找焊线（=新建产品对话框的自动找线）；返回相对 rect 左上角的线端点，" +
             "可直接用于 create_product 的 wires。",

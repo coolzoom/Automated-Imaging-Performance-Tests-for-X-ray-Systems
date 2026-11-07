@@ -79,7 +79,7 @@ public static class Synthetic
             for (int i = 0; i <= 200; i++)
             {
                 double t = i / 200.0;
-                if (o.Broken == (u, w) && t > 0.4 && t < 0.6) { Draw(layer, pts); pts.Clear(); continue; }
+                if (o.Broken == (u, w) && t > 0.35 && t < 0.65) { Draw(layer, pts); pts.Clear(); continue; }
                 var p = p1 + v * t + n * (4 * t * (1 - t) * bow);
                 pts.Add(new Point((int)Math.Round(p.X * 4), (int)Math.Round(p.Y * 4)));
             }

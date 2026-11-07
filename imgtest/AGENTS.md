@@ -32,8 +32,22 @@
   degrees on a half-size image -> per-pixel best -> candidates; each cut out upright (own bilinear `Align.WarpBack`, not
   `Cv2.WarpAffine`: OpenCV 4.13 vs 5.0 differ), angle refined 0.5° / 0.1°, 180° flip checked, 2×2 block affine for
   distortion -> `UnitResult.Affine` (template -> image) + `Angle`; wires measured on the original image.
+- Zoom (`scale_range`, default [0.9,1.4], [1,1] = off): when the native match finds 0 units, `Inspector.BestScale`
+  scans the range on a half-size image; at scale s the pipeline re-runs on the resized template, every unit affine
+  is pre-composed with origTpl -> scaledTpl, and all pixel params are scaled by s (`ImageResult.Scale` records it).
 - Mirror (`allow_mirror`, default on): units also searched with the flipped template; one side per picture
   (`Align.MergeMirrored`: mirrored only if it scores clearly better where both sides found units).
 - All lengths in pixels (`*_px` in product.json; old `*_um` + `pixel_um` files are converted on load). No µm anywhere.
 - `py/core/align.py` + `py/core/inspect.py` mirror `Align.cs` + `Inspector.cs`; check both with `cd py && .venv/bin/python xval/compare.py`.
 - Keep the C# numbers in line with wire_inspect.py when changing Inspector.InspectWire.
+
+## Debugging unit detection (MCP workflow)
+- 0 units → `wireinspect_probe_units`: best_score vs match_thr. Slightly below → lower `match_thr`
+  (`wireinspect_set_product_params {product, patch}` — pass `product` name, headless stdio has no cross-call state
+  and dispatch is concurrent, so select-then-patch races). Peaks ≪ threshold → wrong template, rebuild product.
+- Units found but all wires MISSING with stable z≈1 → wire coordinates land on wrong phase, NOT a threshold issue.
+- Ghost-phase matching: leadframe pad edges dominate CCoeffNormed (2 px wire contributes ~nothing), template locks
+  onto pad lattice offset by ~(−50,−25). Fix = crop tpl on unique wire+bond region, then set wire endpoints in the
+  MATCHED lattice frame (rel coords = abs_wire − found_unit_xy), not the crop's own frame.
+- Working example `products/2_8_4_fix`: rect [300,170,160,80] on 2_8_4.jpg, wires p1[128.6,64.2]→p2[189.5,67],
+  match_thr 0.75 → 12 units (0.89–0.92), 9 OK / 1 BOND1 / 2 SHIFT.

@@ -52,6 +52,7 @@ public sealed class ImageResult
     public int Height { get; set; }
     public string Product { get; set; } = "";
     public double Angle { get; set; }   // common unit direction, degrees (0 when the units point every way)
+    public double Scale { get; set; } = 1.0;   // template scale that matched (camera zoom), 1 = native size
     public List<UnitResult> Units { get; set; } = [];
     public List<WireResult> Wires { get; set; } = [];
     public List<Defect> Defects { get; set; } = [];
@@ -111,6 +112,59 @@ public static class Inspector
         return units;
     }
 
+    /// <summary>Best single match score of the template scaled by s (half-size probe on large images).</summary>
+    static double MatchBest(Mat probe8, Mat tpl8, double s)
+    {
+        using var t = new Mat();
+        Cv2.Resize(tpl8, t, new Size(0, 0), s, s, InterpolationFlags.Area);
+        if (t.Width > probe8.Width || t.Height > probe8.Height || t.Width < 8 || t.Height < 8) return -1;
+        using var res = new Mat();
+        Cv2.MatchTemplate(probe8, t, res, TemplateMatchModes.CCoeffNormed);
+        Cv2.MinMaxLoc(res, out _, out double mx, out _, out _);
+        return mx;
+    }
+
+    /// <summary>Picture scale relative to the template: scans [smin, smax] coarsely then ±0.04 finely, on a
+    /// half-size image for speed. Returns the best scale once it reaches thr, else 1 (native size).</summary>
+    public static double BestScale(Mat gray8, Mat tpl8, double thr, double smin, double smax)
+    {
+        double f = gray8.Width >= 1200 ? 0.5 : 1.0;
+        using var probe = f == 1 ? gray8.Clone() : Align.Resize(gray8, f);
+        double bestS = 1.0, bestV = -1;
+        void Scan(double from, double to, double step)
+        {
+            for (double s = from; s <= to + 1e-9; s += step)
+            {
+                double v = MatchBest(probe, tpl8, s * f);
+                if (v > bestV) { bestV = v; bestS = s; }
+            }
+        }
+        Scan(smin, smax, Math.Max(0.02, (smax - smin) / 20));
+        Scan(Math.Max(smin, bestS - 0.04), Math.Min(smax, bestS + 0.04), 0.01);
+        return bestV >= thr ? bestS : 1.0;
+    }
+
+    /// <summary>Match-response diagnosis for "no units found": the best peaks (x, y, score) and how many peaks
+    /// sit above each probe threshold — lets an agent pick a working match_thr or see that the template is wrong.</summary>
+    public static List<(double x, double y, double score)> ProbeUnits(Mat gray8, Mat tpl8, int top = 8)
+    {
+        var peaks = new List<(double, double, double)>();
+        if (tpl8.Width > gray8.Width || tpl8.Height > gray8.Height) return peaks;
+        using var res = new Mat();
+        Cv2.MatchTemplate(gray8, tpl8, res, TemplateMatchModes.CCoeffNormed);
+        int d = Math.Max(4, Math.Min(tpl8.Width, tpl8.Height) / 2);
+        for (int i = 0; i < top; i++)
+        {
+            Cv2.MinMaxLoc(res, out _, out double mx, out _, out Point loc);
+            if (mx <= 0 || double.IsNaN(mx)) break;
+            peaks.Add((loc.X, loc.Y, mx));
+            int x0 = Math.Max(0, loc.X - d), y0 = Math.Max(0, loc.Y - d);
+            int x1 = Math.Min(res.Width, loc.X + d + 1), y1 = Math.Min(res.Height, loc.Y + d + 1);
+            res[new Rect(x0, y0, x1 - x0, y1 - y0)].SetTo(new Scalar(-1));
+        }
+        return peaks;
+    }
+
     public static (Point2d p1, Point2d p2) WirePoints(UnitResult u, WireSpec w) => WirePoints(u.Map(), w);
 
     static (Point2d p1, Point2d p2) WirePoints(double[] m, WireSpec w)
@@ -146,11 +200,9 @@ public static class Inspector
         return units;
     }
 
-    public static ImageResult Detect(Mat gray8, Product product)
+    /// <summary>Upright-or-rotated unit search plus the mirror side, on one template image.</summary>
+    static List<UnitResult> FindAll(Mat gray8, Mat tpl, PixelParams a)
     {
-        if (product.Template == null) throw new InvalidOperationException("产品没有模板图");
-        var a = product.Params();
-        var tpl = product.Template;
         var units = Find(gray8, tpl, a);
         if (a.AllowMirror)   // a part flipped over shows up mirrored in the X-ray picture
         {
@@ -158,9 +210,57 @@ public static class Inspector
             Cv2.Flip(tpl, flipped, FlipMode.Y);
             units = Align.MergeMirrored(units, Find(gray8, flipped, a), tpl.Width, tpl.Height);
         }
+        return units;
+    }
+
+    /// <summary>Pixel lengths scaled by s for a picture zoomed by s (z scores and % thresholds unchanged).</summary>
+    static PixelParams ScalePx(PixelParams a, double s)
+    {
+        int along = Math.Max(5, (int)Math.Round(a.Along * s));
+        if (along % 2 == 0) along++;
+        return a with
+        {
+            HalfW = Math.Max(3, (int)Math.Round(a.HalfW * s)),
+            BgOff = Math.Max(2, (int)Math.Ceiling(a.BgOff * s)),
+            BgW = Math.Max(3, (int)Math.Ceiling(a.BgW * s)),
+            D = Math.Max(2, (int)Math.Round(a.D * s)),
+            Ext = Math.Max(4, (int)Math.Ceiling(a.Ext * s)),
+            Along = along,
+            EndTol = a.EndTol * s,
+            GapMax = Math.Max(3, a.GapMax * s),
+            ShiftMax = a.ShiftMax * s,
+            AlignSearch = Math.Max(2, (int)Math.Round(a.AlignSearch * s)),
+        };
+    }
+
+    public static ImageResult Detect(Mat gray8, Product product)
+    {
+        if (product.Template == null) throw new InvalidOperationException("产品没有模板图");
+        var a = product.Params();
+        var tpl = product.Template;
+        var units = FindAll(gray8, tpl, a);
+        var (smin, smax) = product.ScaleRange is { Length: 2 } rng ? (Math.Min(rng[0], rng[1]), Math.Max(rng[0], rng[1])) : (1.0, 1.0);
+        double scale = 1.0;
+        if (units.Count == 0 && smax > smin + 1e-9)   // camera zoom differs per picture: find the scale, then re-run on the scaled template
+        {
+            double s = BestScale(gray8, tpl, a.MatchThr, smin, smax);
+            if (Math.Abs(s - 1) > 0.02)
+            {
+                using var tplS = Align.Resize(tpl, s);
+                var found = FindAll(gray8, tplS, a);
+                if (found.Count > 0)
+                {
+                    var sm = new double[] { s, 0, 0, 0, s, 0 };   // affines came out scaledTpl -> image: pre-compose origTpl -> scaledTpl
+                    foreach (var u in found) u.Affine = Align.Compose(u.Map(), sm);
+                    units = found;
+                    scale = s;
+                    a = ScalePx(a, s);
+                }
+            }
+        }
         var res = new ImageResult
         {
-            Width = gray8.Width, Height = gray8.Height, Product = product.Name, Units = units,
+            Width = gray8.Width, Height = gray8.Height, Product = product.Name, Units = units, Scale = scale,
             Angle = Math.Round(Align.MeanAngle(units.Select(u => u.Angle).ToList(), Align.SameDirection) * 10) / 10,
         };
         var img = Prepare(gray8, a.Dark);

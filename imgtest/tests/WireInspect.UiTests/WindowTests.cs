@@ -85,14 +85,10 @@ public class WindowTests
     static Button ToolButton(Window w, string text) => w.GetLogicalDescendants().OfType<Button>()
         .First(b => b.Content is StackPanel sp && sp.Children.OfType<TextBlock>().Any(t => t.Text == text));
 
-    static List<string> MenuTexts(Button b)
-    {
-        b.Flyout!.ShowAt(b);
-        Dispatcher.UIThread.RunJobs();
-        var items = ((MenuFlyout)b.Flyout).Items.OfType<MenuItem>().Select(m => m.Header?.ToString() ?? "").ToList();
-        b.Flyout.Hide();
-        return items;
-    }
+    static MenuFlyout RecentMenu(MainWindow w) => w.BuildRecentFlyout();
+
+    static List<string> MenuTexts(MainWindow w) =>
+        RecentMenu(w).Items.OfType<MenuItem>().Select(m => m.Header?.ToString() ?? "").ToList();
 
     [AvaloniaFact]
     public async Task RecentFolders_ListedDedupedAndRecorded()
@@ -112,20 +108,20 @@ public class WindowTests
         }));
         var w = new MainWindow { WindowState = WindowState.Normal, Width = 1400, Height = 900 };
         w.Show();
-        var recent = ToolButton(w, "最近文件夹");
-        var texts = MenuTexts(recent);
+        Assert.NotNull(ToolButton(w, "最近文件夹"));
+        var texts = MenuTexts(w);
         Assert.Equal(2 + 1, texts.Count);   // lotA once, gone (disabled), 清除最近记录
         Assert.StartsWith("lotA", texts[0]);
         Assert.Contains("（不存在）", texts[1]);
 
         // clicking a menu entry must open that folder
-        ((MenuFlyout)recent.Flyout!).Items.OfType<MenuItem>().First(i => i.Header!.ToString()!.StartsWith("lotA"))
+        RecentMenu(w).Items.OfType<MenuItem>().First(i => i.Header!.ToString()!.StartsWith("lotA"))
             .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         Dispatcher.UIThread.RunJobs();
         Assert.Contains("lotA", w.Title);
 
         await w.OpenFolderAsync(b);
-        texts = MenuTexts(recent);
+        texts = MenuTexts(w);
         Assert.StartsWith("lotB", texts[0]);
         Assert.StartsWith("lotA", texts[1]);
         var saved = Json.Load<AppConfig>(Path.Combine(home, "config.json")).RecentFolders;
@@ -135,7 +131,7 @@ public class WindowTests
         var cfg = Json.Load<AppConfig>(Path.Combine(home, "config.json"));
         cfg.RecentFolders.Insert(0, a);
         Json.Save(Path.Combine(home, "config.json"), cfg);
-        Assert.StartsWith("lotA", MenuTexts(recent)[0]);
+        Assert.StartsWith("lotA", MenuTexts(w)[0]);
         w.Close();
     }
 

@@ -155,6 +155,26 @@ public class InspectorTests
         Assert.True(r.Wires.All(w => !w.Bad), Bad(r));
     }
 
+    [Theory]
+    [InlineData(1.25)]
+    [InlineData(0.8)]
+    public void ScaledImage_UnitsFoundAndWiresOk(double s)
+    {
+        using var good = Make();
+        var p = MakeProduct(good);
+        p.MaxAngleDeg = 0;
+        p.ScaleRange = [0.7, 1.5];
+        using var img = new OpenCvSharp.Mat();
+        OpenCvSharp.Cv2.Resize(good, img, new OpenCvSharp.Size(0, 0), s, s, OpenCvSharp.InterpolationFlags.Area);
+        var r = Inspector.Detect(img, p);
+        Assert.Equal(9, r.Units.Count);
+        Assert.InRange(r.Scale, s - 0.05, s + 0.05);
+        Assert.Equal(18, r.Wires.Count);
+        Assert.True(r.Wires.All(w => !w.Bad), Bad(r));
+        // wire ends must land on the zoomed picture: affine carries the scale
+        Assert.InRange(r.Units[0].Box[0], Synthetic.Ox * s - 3, Synthetic.Ox * s + 3);
+    }
+
     [Fact]
     public void PixelParams()
     {

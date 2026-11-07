@@ -17,6 +17,7 @@
   <ItemGroup>
     <AvaloniaResource Include="Assets/**" />
     <ProjectReference Include="../WireInspect.Core/WireInspect.Core.csproj" />
+    <InternalsVisibleTo Include="WireInspect.UiTests" />
   </ItemGroup>
 
 </Project>
