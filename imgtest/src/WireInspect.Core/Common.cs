@@ -32,8 +32,18 @@ public static class Json
 public static class AppPaths
 {
     /// <summary>imgtest/ (the folder holding products/ and config.json): WIREINSPECT_HOME, else the first
-    /// ancestor of the executable that has a products/ folder, else the executable folder.</summary>
-    public static string Root { get; } = FindRoot();
+    /// ancestor of the executable that has a products/ folder, else the executable folder. Re-resolved when
+    /// the environment variable changes so tests and the MCP host can redirect it.</summary>
+    static string? _root, _rootEnv;
+    public static string Root
+    {
+        get
+        {
+            var env = Environment.GetEnvironmentVariable("WIREINSPECT_HOME");
+            if (env != _rootEnv) { _rootEnv = env; _root = null; }
+            return _root ??= FindRoot();
+        }
+    }
     public static string Products => Path.Combine(Root, "products");
     public static string Config => Path.Combine(Root, "config.json");
 
@@ -53,6 +63,8 @@ public sealed class AppConfig
     public string Operator { get; set; } = "";
     public string Product { get; set; } = "";
     public int Workers { get; set; }
+    public int McpPort { get; set; } = 3918;
+    public bool McpAutoStart { get; set; }
 
     public const int RecentMax = 10;
 

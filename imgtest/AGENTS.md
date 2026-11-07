@@ -3,7 +3,13 @@
 ## Layout
 - `src/WireInspect.Core` — algorithm (Inspector, AutoWires, Simulator), Product, Session, CsvReport. No UI.
 - `src/WireInspect.App` — Avalonia GUI, code-only (no XAML), layout copied from app-gpt `ui/main_window.py`.
-- `src/WireInspect.Cli` — command line (`detect`, `make-product`, `list`).
+- `src/WireInspect.Core/Mcp` — MCP server (hand-rolled JSON-RPC): `HttpTransport` (loopback :3918/mcp, port 0 = ephemeral),
+  `StdioTransport` + `StdioHttpProxy` bridge, `McpHost.RunStdio`, `WireInspectSession`/`HeadlessSession` (tool-facing ops,
+  GUI subclass lives nested in MainWindow.Mcp.cs), `WireInspectTools` (26 tools, Chinese descriptions),
+  `AgentConfigurator` (merges `wireinspect` + `wireinspect-headless` entries into agent configs, `.wireinspect.bak` backups).
+- `src/WireInspect.Cli` — command line (`detect`, `make-product`, `list`, `mcp` = headless MCP stdio server).
+- `src/WireInspect.App` — sidebar button 设置|MCP/AI → `McpDialog` (port/start/stop/auto-start/test/copy + per-agent
+  配置/移除/一键配置全部); `Program.Main` handles `--mcp-stdio [--gui] [--port N] [--folder DIR]` before Avalonia starts.
 - `tests/WireInspect.Tests` — synthetic-image unit tests; `tests/WireInspect.UiTests` — Avalonia.Headless smoke test,
   writes `out/ui_main.png`, `out/ui_product.png` (needs `/Users/mac/Downloads/2026-11-03-13-56-22/2_8_4.jpg`, else no-op).
 - `products/<name>/tpl.png + product.json` — product library; `config.json` (git-ignored) — recent folders, operator, product.

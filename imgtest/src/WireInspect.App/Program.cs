@@ -29,7 +29,15 @@ public sealed class App : Application
 public static class Program
 {
     [STAThread]
-    public static void Main(string[] args) => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    public static int Main(string[] args)
+    {
+        // `WireInspect.App --mcp-stdio [--gui] [--port N] [--folder DIR]`: MCP over stdin/stdout for AI agents,
+        // no window. --gui bridges to the HTTP endpoint of a running instance.
+        if (args.Contains("--mcp-stdio", StringComparer.OrdinalIgnoreCase))
+            return WireInspect.Mcp.McpHost.RunStdio(args, "1.0.0");
+        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        return 0;
+    }
 
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>()
         .UsePlatformDetect()

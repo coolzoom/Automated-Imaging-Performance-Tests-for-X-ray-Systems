@@ -21,7 +21,7 @@ namespace WireInspect.App;
 
 /// <summary>Main window, laid out like app-gpt's ui/main_window.py: toolbar on top, file tree on the
 /// left, viewer + thumbnails in the middle, defect / wire tables and the verdict on the right.</summary>
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     const string Pending = "pending";
     static readonly (string name, object? allowed)[] Filters =
@@ -52,7 +52,7 @@ public sealed class MainWindow : Window
     bool _running, _loadingProducts;
 
     // controls
-    readonly Button _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct, _btnSettings;
+    readonly Button _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct, _btnSettings, _btnMcp;
     readonly ComboBox _productCombo = new() { MinWidth = 150 };
     readonly CheckBox _chkFollow = new() { Content = "自动显示最新", IsChecked = true };
     readonly TextBox _operator = new();
@@ -99,6 +99,7 @@ public sealed class MainWindow : Window
         _btnNewProduct = Icons.ToolButton("add", "新建产品", "在当前图片上框选一个单元，自动找线，生成产品配置");
         _btnEditProduct = Icons.ToolButton("edit", "编辑产品");
         _btnSettings = Icons.ToolButton("gear", "设置", "运行参数（并行线程数）");
+        _btnMcp = Icons.ToolButton("mcp", "MCP / AI", "MCP 服务与 AI Agent 一键配置");
         Content = Build();
         Wire();
         LoadProducts(_cfg.Product);
@@ -115,6 +116,7 @@ public sealed class MainWindow : Window
         };
         spin.Start();
         _statusTimer.Tick += (_, _) => { _status.Text = ""; _statusTimer.Stop(); };
+        InitMcp();
     }
 
     // ------------------------------------------------------------------ layout
@@ -141,13 +143,13 @@ public sealed class MainWindow : Window
         productRow.Children.Add(productButtons);
         productRow.Children.Add(productLabel);
         var side = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 0, 6) };
-        foreach (var c in new Control[] { logo, Pair(_btnOpen, _btnRecent, _btnReport), Sep(), Pair(_btnStart, _btnStop, _btnRerun), Sep(), _btnSettings, Sep(),
+        foreach (var c in new Control[] { logo, Pair(_btnOpen, _btnRecent, _btnReport), Sep(), Pair(_btnStart, _btnStop, _btnRerun), Sep(), Pair(_btnSettings, _btnMcp), Sep(),
                      productRow, _productCombo, Sep(), Label("操作员"), _operator })
         {
             c.HorizontalAlignment = HorizontalAlignment.Stretch;
             side.Children.Add(c);
         }
-        foreach (var b in new Button[] { _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnSettings, _btnNewProduct, _btnEditProduct })
+        foreach (var b in new Button[] { _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnSettings, _btnMcp, _btnNewProduct, _btnEditProduct })
             b.HorizontalContentAlignment = HorizontalAlignment.Left;
         _operator.Text = _cfg.Operator;
 
@@ -325,6 +327,7 @@ public sealed class MainWindow : Window
         _btnNewProduct.Click += async (_, _) => await OpenProductDialog(false);
         _btnEditProduct.Click += async (_, _) => await OpenProductDialog(true);
         _btnSettings.Click += async (_, _) => await OpenSettings();
+        _btnMcp.Click += async (_, _) => await new McpDialog(this).ShowDialog(this);
         _productCombo.SelectionChanged += (_, _) => { if (!_loadingProducts) SelectProduct(_productCombo.SelectedItem as string); };
         _operator.LostFocus += (_, _) =>
         {
@@ -365,6 +368,7 @@ public sealed class MainWindow : Window
         Closing += (_, _) =>
         {
             _detectCts?.Cancel();
+            StopMcp();
             _session?.Save();
         };
     }

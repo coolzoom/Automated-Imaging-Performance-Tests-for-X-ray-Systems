@@ -11,6 +11,7 @@ const string Usage = """
   wireinspect make-product --image <图片> --box x,y,w,h --name 名称 [--wire x1,y1,x2,y2 ...] [--auto]
       --wire 用整图坐标；不给 --wire 时用 --auto 自动找线
   wireinspect list
+  wireinspect mcp [--folder 目录]   MCP 服务（stdio，给 AI agent 用；协议只走 stdout）
 """;
 
 if (args.Length == 0) { Console.WriteLine(Usage); return 1; }
@@ -22,6 +23,8 @@ try
         case "list":
             foreach (var n in Product.List()) Console.WriteLine(n);
             return 0;
+        case "mcp":
+            return WireInspect.Mcp.McpHost.RunStdio(args.Skip(1).ToArray(), "1.0.0");
         case "make-product":
             return MakeProduct(opts);
         case "detect" when positional.Count == 1:

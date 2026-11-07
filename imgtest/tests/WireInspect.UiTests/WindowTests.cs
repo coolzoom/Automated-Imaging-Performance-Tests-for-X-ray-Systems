@@ -7,6 +7,7 @@ using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Threading;
 using OpenCvSharp;
+using System.Net.Http.Json;
 using WireInspect.App;
 using Window = Avalonia.Controls.Window;
 using WireInspect.Core;
@@ -183,5 +184,49 @@ public class WindowTests
         dlg.Show();
         Save(dlg, "ui_product.png");
         dlg.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task McpDialog_Starts_Server_And_Serves_Initialize()
+    {
+        var home = Home();
+        var w = new MainWindow();
+        w.Show();
+        Assert.NotNull(ToolButton(w, "MCP / AI"));
+
+        var dlg = new McpDialog(w);
+        dlg.Show();
+        Save(dlg, "ui_mcp.png");
+
+        int port;
+        using (var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0))
+        {
+            l.Start();
+            port = ((System.Net.IPEndPoint)l.LocalEndpoint).Port;
+        }
+        var portBox = dlg.GetLogicalDescendants().OfType<NumericUpDown>().Single();
+        portBox.Value = port;
+        var start = dlg.GetLogicalDescendants().OfType<Button>().First(b => b.Content as string == "启动");
+        start.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+
+        var texts = dlg.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text).ToList();
+        Assert.Contains("● 运行中", texts);
+        var url = texts.First(t => t?.StartsWith("http://127.0.0.1:") == true)!;
+
+        using var http = new HttpClient();
+        var resp = await http.PostAsJsonAsync(url, new
+        {
+            jsonrpc = "2.0", id = 1, method = "initialize",
+            @params = new { protocolVersion = "2025-06-18", capabilities = new { }, clientInfo = new { name = "t", version = "0" } },
+        });
+        Assert.True(resp.IsSuccessStatusCode);
+        var init = System.Text.Json.Nodes.JsonNode.Parse(await resp.Content.ReadAsStringAsync())!;
+        Assert.Equal("wireinspect", init["result"]?["serverInfo"]?["name"]?.GetValue<string>());
+
+        // agent rows are listed with states
+        Assert.Contains(texts, t => t == "Cursor" || t == "Claude Desktop");
+        dlg.Close();
+        w.Close();
     }
 }

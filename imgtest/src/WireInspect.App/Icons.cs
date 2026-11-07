@@ -33,6 +33,8 @@ public static class Icons
         ["edit"] = [new P("M4 20h4L19.5 8.5l-4-4L4 16z", "#fff4cc", "#b8860b"), new P("M13.5 6.5l4 4")],
         ["gear"] = [new C(12, 12, 4.5),
                     new P("M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2")],
+        ["mcp"] = [new C(6, 6, 3), new C(18, 12, 3), new C(6, 18, 3),
+                   new P("M8.5 7.3 15.3 10.8M8.5 16.7 15.3 13.2")],
     };
 
     public static Control Get(string name, double size = 18)
