@@ -251,7 +251,11 @@ public static class Inspector
                 if (found.Count > 0)
                 {
                     var sm = new double[] { s, 0, 0, 0, s, 0 };   // affines came out scaledTpl -> image: pre-compose origTpl -> scaledTpl
-                    foreach (var u in found) u.Affine = Align.Compose(u.Map(), sm);
+                    foreach (var u in found)
+                    {
+                        u.Affine = Align.Compose(u.Map(), sm);
+                        u.Box[2] = tpl.Width; u.Box[3] = tpl.Height;   // Corners() maps Box w/h through the affine: template space, not scaled-template space
+                    }
                     units = found;
                     scale = s;
                     a = ScalePx(a, s);

@@ -19,10 +19,11 @@ public static class Annotator
             var wires = res.Wires.Where(w => w.Unit == u.Index).ToList();
             var bad = wires.Where(w => w.Bad).ToList();
             var col = bad.Count == 0 ? ok : ng;
-            int bh = u.Box[3];
             var m = u.Map();
-            Cv2.Polylines(vis, [u.Corners().Select(c => S(c.x, c.y)).ToArray()], true, col, 2);
+            var cs = u.Corners();
+            Cv2.Polylines(vis, [cs.Select(c => S(c.x, c.y)).ToArray()], true, col, 2);
             var (x, y) = Align.Apply(m, 0, 0);
+            double by = Math.Max(cs[2].y, cs[3].y);   // bottom edge on the image (template space differs when scaled)
             foreach (var w in wires)
             {
                 if (w.Flags.Contains("MISSING"))
@@ -40,8 +41,8 @@ public static class Annotator
             {
                 var w0 = wires.OrderBy(w => w.ZAll).First();
                 var info = $"z={w0.ZAll:F1} ball={w0.ZBall:F1} sw={w0.SweepPx:F1}px";
-                Cv2.PutText(vis, info, S(x + 4, y + bh - 6), HersheyFonts.HersheySimplex, 0.55, Scalar.Black, 3);
-                Cv2.PutText(vis, info, S(x + 4, y + bh - 6), HersheyFonts.HersheySimplex, 0.55, col, 1);
+                Cv2.PutText(vis, info, S(x + 4, by - 6), HersheyFonts.HersheySimplex, 0.55, Scalar.Black, 3);
+                Cv2.PutText(vis, info, S(x + 4, by - 6), HersheyFonts.HersheySimplex, 0.55, col, 1);
             }
         }
         return vis;
