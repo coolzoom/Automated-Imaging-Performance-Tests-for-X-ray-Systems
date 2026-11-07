@@ -17,6 +17,8 @@
 - `py/` — separate Python/PySide6 variant, not part of the .NET build; do not touch from .NET work.
 
 ## Commands (run in imgtest/)
+- One-click menu (env setup / build / run / test / single-file publish): `./run.sh` (macOS/Linux) or `run.cmd` (Windows).
+  Published output lands in `out/publish/<name>-<rid>/` with `products/` copied next to the exe.
 - Build: `dotnet build WireInspect.slnx`
 - Tests: `dotnet test WireInspect.slnx`
 - GUI: `dotnet run --project src/WireInspect.App [folder]`

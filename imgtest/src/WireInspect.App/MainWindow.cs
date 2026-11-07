@@ -89,6 +89,7 @@ public sealed partial class MainWindow : Window
         Height = 960;
         WindowState = WindowState.Maximized;
         Background = Brush.Parse("#0e2138");
+        Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://WireInspect/Assets/app.png")));
         _btnOpen = Icons.ToolButton("open", "导入文件夹");
         _btnRecent = Icons.ToolButton("recent", "最近文件夹", "重新打开最近用过的文件夹");
         _btnStart = Icons.ToolButton("start", "开始检测", "检测还没有结果的图片");
@@ -1093,6 +1094,12 @@ public sealed partial class MainWindow : Window
         UpdateCounts();
         UpdateEnabled();
         Status(finished ? "检测完成" : "检测已停止，可再次点“开始检测”继续");
+        if (finished)
+        {
+            int ng = rels.Count(rel => s.Status(rel) is Session.Suspect or Session.Fail);
+            if (ng > 0) _filter.SelectedIndex = 1;   // 疑似缺陷
+            _ = Dialogs.Info(this, "检测完成", $"本次检测 {rels.Count} 张，其中 {ng} 张发现问题（疑似缺陷）。");
+        }
     }
 
     void OnResult(string rel, ImageResult? res, string? err, int k, int total)

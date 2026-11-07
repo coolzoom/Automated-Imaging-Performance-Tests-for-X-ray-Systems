@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>WireInspect</AssemblyName>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +17,7 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets/**" />
+    <AvaloniaResource Remove="Assets/*.icns;Assets/*.ico" />
     <ProjectReference Include="../WireInspect.Core/WireInspect.Core.csproj" />
     <InternalsVisibleTo Include="WireInspect.UiTests" />
   </ItemGroup>
