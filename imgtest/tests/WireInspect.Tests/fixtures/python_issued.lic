@@ -1,0 +1,11 @@
+{
+ "license": {
+  "id": "py1",
+  "customer": "Python签发",
+  "machine": "AAAA-BBBB-CCCC-DDDD",
+  "edition": "demo",
+  "issued": "2026-01-01",
+  "expires": "2099-01-01"
+ },
+ "sig": "Ofuz9TdVGd9UZiUEKHUxraxMPy+5xKYFfJWum+KfkkmwNVA323zc0BNoWizhkSLnVRJgLinRXlhuFjFTm5q/CA=="
+}

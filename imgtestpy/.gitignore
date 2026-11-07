@@ -1,0 +1,8 @@
+.venv/
+.venv38/
+__pycache__/
+*.pyc
+build/
+dist/
+products/
+*.lic

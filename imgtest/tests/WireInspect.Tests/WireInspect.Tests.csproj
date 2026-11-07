@@ -22,4 +22,8 @@
     <ProjectReference Include="..\..\src\WireInspect.Core\WireInspect.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

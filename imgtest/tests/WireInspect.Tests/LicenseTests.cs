@@ -1,3 +1,4 @@
+using System.Text;
 using WireInspect.Core;
 using Xunit;
 
@@ -37,6 +38,32 @@ public sealed class LicenseTests : IDisposable
         Assert.Equal("demo", lic.Edition);
         Assert.Equal("test", lic.Customer);
         Assert.Equal(new DateOnly(2099, 12, 31), lic.Expires);
+    }
+
+    [Fact]
+    public void Canonical_Matches_Python_JsonDumps()
+    {
+        // imgtestpy (Win7 build) verifies the same bytes: Python json.dumps(ensure_ascii=False,
+        // sort_keys=True, separators=(',',':')) on {"id":..,"customer":..,"machine":..,"edition":..,
+        // "issued":..,"expires":..}. Non-ASCII stays raw UTF-8.
+        var lic = new Dictionary<string, string>
+        {
+            ["id"] = "abc", ["customer"] = "测试 A/B+\"x\"", ["machine"] = Machine,
+            ["edition"] = "full", ["issued"] = "2026-01-01", ["expires"] = "2027-01-01",
+        };
+        Assert.Equal("{\"customer\":\"测试 A/B+\\\"x\\\"\",\"edition\":\"full\",\"expires\":\"2027-01-01\"," +
+            "\"id\":\"abc\",\"issued\":\"2026-01-01\",\"machine\":\"AAAA-BBBB-CCCC-DDDD\"}",
+            Encoding.UTF8.GetString(License.Canonical(lic)));
+    }
+
+    [Fact]
+    public void Parse_PythonIssuedFile_Works()
+    {
+        // tests/fixtures/python_issued.lic was produced by imgtestpy tools/make_license.py with Secret:
+        // proves the Win7 Python build and this app verify the same file.
+        var text = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "python_issued.lic"));
+        var l = License.Parse(text, Machine);
+        Assert.Equal("Python签发", l.Customer);
     }
 
     [Fact]

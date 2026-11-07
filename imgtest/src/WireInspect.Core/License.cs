@@ -126,9 +126,25 @@ public sealed class License
     }
 
     // ------------------------------------------------------------------ sign / parse
+    /// <summary>Canonical JSON like Python json.dumps(sort_keys=True, separators=(',',':'), ensure_ascii=False):
+    /// the Win7 Python build (imgtestpy) signs/verifies the same bytes, so a .lic works in both apps.</summary>
     public static byte[] Canonical(Dictionary<string, string> lic)
         => Encoding.UTF8.GetBytes("{" + string.Join(',', Fields.OrderBy(k => k, StringComparer.Ordinal)
-            .Select(k => JsonSerializer.Serialize(k) + ":" + JsonSerializer.Serialize(lic[k]))) + "}");
+            .Select(k => JsonEscape(k) + ":" + JsonEscape(lic[k]))) + "}");
+
+    static string JsonEscape(string s)
+    {
+        var b = new StringBuilder().Append('"');
+        foreach (var c in s)
+            b.Append(c switch
+            {
+                '"' => "\\\"", '\\' => "\\\\", '\n' => "\\n", '\r' => "\\r", '\t' => "\\t",
+                '\b' => "\\b", '\f' => "\\f",
+                _ when c < ' ' => "\\u" + ((int)c).ToString("x4"),
+                _ => c.ToString(),
+            });
+        return b.Append('"').ToString();
+    }
 
     public static string Sign(Dictionary<string, string> lic, byte[] secret)
         => JsonSerializer.Serialize(new Dictionary<string, object>

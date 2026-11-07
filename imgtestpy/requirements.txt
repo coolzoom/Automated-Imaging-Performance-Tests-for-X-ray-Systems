@@ -1,0 +1,6 @@
+# Dev machines (macOS/Linux/Win10+): PySide6 — code is dual-compatible via qtcompat.py.
+# Win7 build machine uses requirements-win7.txt (Python 3.8 + PySide2/Qt5.15).
+PySide2==5.15.2.1; sys_platform == 'win32' and python_version < '3.9'
+PySide6; sys_platform != 'win32' or python_version >= '3.9'
+opencv-python-headless>=4.6,<5
+numpy>=1.21
