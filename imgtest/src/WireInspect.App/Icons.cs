@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Path = Avalonia.Controls.Shapes.Path;
 
 namespace WireInspect.App;
@@ -68,6 +69,11 @@ public static class Icons
             },
             Padding = new Thickness(4, 4), Background = Brushes.Transparent, BorderThickness = new Thickness(0),
         };
+        // keep the flat look when disabled: the Fluent :disabled state paints the template presenter grey
+        b.Styles.Add(new Avalonia.Styling.Style(x => x.OfType<Button>().Class(":disabled").Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>())
+        {
+            Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brushes.Transparent) },
+        });
         if (tip != null) ToolTip.SetTip(b, tip);
         return b;
     }
