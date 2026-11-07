@@ -27,8 +27,12 @@ public sealed class GuiApp : Application
     }
 
     public static int Run(string[] args)
-        => AppBuilder.Configure<GuiApp>().UsePlatformDetect().LogToTrace()
+    {
+        try { System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("zh-CN"); }
+        catch (Exception) { }
+        return AppBuilder.Configure<GuiApp>().UsePlatformDetect().LogToTrace()
             .StartWithClassicDesktopLifetime(args);
+    }
 }
 
 public sealed class ToolWindow : Window
@@ -58,7 +62,7 @@ public sealed class ToolWindow : Window
         Width = 780; Height = 660;
         Background = Brush.Parse("#0e2138");
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto,Auto") };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto,Auto,Auto") };
         int row = 0;
         void Row(string label, Control c)
         {

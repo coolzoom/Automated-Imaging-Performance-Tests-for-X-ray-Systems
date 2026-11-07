@@ -12,7 +12,11 @@ using WireInspect.Core;
 
 static class Program
 {
-    static readonly string KeyDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "license_keys"));
+    // Published: <exe dir>/license_keys (run.sh/run.cmd copy it next to the exe). Dev: repo/../license_keys.
+    static readonly string KeyDir =
+        Directory.Exists(Path.Combine(AppContext.BaseDirectory, "license_keys"))
+            ? Path.Combine(AppContext.BaseDirectory, "license_keys")
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "license_keys"));
     public static string KeyPath => Path.Combine(KeyDir, "vendor_ed25519.key");
     public static string IssuedDir => Path.Combine(KeyDir, "issued");
     const string MachineRe = @"^[0-9A-F]{4}(-[0-9A-F]{4}){3}$";

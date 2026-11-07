@@ -124,7 +124,7 @@ if "%r%"=="4" set "RID=osx-x64"
 if "%r%"=="5" set "RID=linux-x64"
 if "%r%"=="6" set "RID=linux-arm64"
 if not defined RID ( echo [x] 无效选择 & pause & goto menu )
-echo 打包哪个项目?  1^) GUI (WireInspect)  2^) CLI (WireInspect.Cli)  3^) 两者  4^) 注册机 (WireInspect.LicenseTool)
+echo 打包哪个项目?  1^) GUI (WireInspect)  2^) CLI (WireInspect.Cli)  3^) 两者  4^) 注册机 (WireInspect.LicenseTool)  5^) 全部
 set "p="
 set /p "p=选择 [1]: "
 if "%p%"=="" set "p=1"
@@ -132,6 +132,7 @@ if "%p%"=="1" ( call :publish "%APP%" "WireInspect" & goto pack_done )
 if "%p%"=="2" ( call :publish "%CLI%" "WireInspect.Cli" & goto pack_done )
 if "%p%"=="3" ( call :publish "%APP%" "WireInspect" & call :publish "%CLI%" "WireInspect.Cli" & goto pack_done )
 if "%p%"=="4" ( call :publish "%LICTOOL%" "WireInspect.LicenseTool" & goto pack_done )
+if "%p%"=="5" ( call :publish "%APP%" "WireInspect" & call :publish "%CLI%" "WireInspect.Cli" & call :publish "%LICTOOL%" "WireInspect.LicenseTool" & goto pack_done )
 echo [x] 无效选择
 :pack_done
 pause & goto menu
@@ -141,6 +142,10 @@ set "OUTDIR=%PUB_ROOT%\%~2-%RID%"
 echo ==^> 发布 %~2 -^> %OUTDIR% (%RID%, self-contained single file)
 dotnet publish "%~1" -c Release -r %RID% --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "%OUTDIR%" || exit /b 1
 xcopy /E /I /Y products "%OUTDIR%\products" >nul
+if /i "%~2"=="WireInspect.LicenseTool" if exist "..\license_keys\vendor_ed25519.key" (
+    xcopy /I /Y "..\license_keys\vendor_ed25519.key" "%OUTDIR%\license_keys\" >nul
+    echo ==^> 签名私钥已复制到 %OUTDIR%\license_keys\ (仅限内部使用，勿发给客户)
+)
 echo ==^> 完成: %OUTDIR%\  (products\ 已复制到可执行文件旁)
 exit /b 0
 

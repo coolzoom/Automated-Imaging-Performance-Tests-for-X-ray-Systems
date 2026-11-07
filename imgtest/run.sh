@@ -93,6 +93,11 @@ publish() { # $1=csproj $2=rid $3=name
         -p:IncludeNativeLibrariesForSelfExtract=true \
         -o "$out"
     cp -R products "$out/" 2>/dev/null || true
+    if [ "$3" = "WireInspect.LicenseTool" ] && [ -f ../license_keys/vendor_ed25519.key ]; then
+        mkdir -p "$out/license_keys"
+        cp ../license_keys/vendor_ed25519.key "$out/license_keys/"
+        say "签名私钥已复制到 $out/license_keys/（仅限内部使用，勿发给客户）"
+    fi
     case "$2-$3" in osx-*-WireInspect) bundle_app "$out" ;; esac
     say "完成: $out/  (products/ 已复制到可执行文件旁)"
 }
@@ -126,13 +131,14 @@ do_pack() {
     sdk_ok || die "请先运行 [1] 环境配置"
     local rid
     rid=$(pick_rid) || { warn "RID 选择无效"; return; }
-    echo "打包哪个项目?  1) GUI (WireInspect)  2) CLI (WireInspect.Cli)  3) 两者  4) 注册机 (WireInspect.LicenseTool)"
+    echo "打包哪个项目?  1) GUI (WireInspect)  2) CLI (WireInspect.Cli)  3) 两者  4) 注册机 (WireInspect.LicenseTool)  5) 全部"
     read -rp "选择 [1]: " p
     case "${p:-1}" in
         1) publish "$APP" "$rid" "WireInspect" ;;
         2) publish "$CLI" "$rid" "WireInspect.Cli" ;;
         3) publish "$APP" "$rid" "WireInspect"; publish "$CLI" "$rid" "WireInspect.Cli" ;;
         4) publish "tools/WireInspect.LicenseTool/WireInspect.LicenseTool.csproj" "$rid" "WireInspect.LicenseTool" ;;
+        5) publish "$APP" "$rid" "WireInspect"; publish "$CLI" "$rid" "WireInspect.Cli"; publish "tools/WireInspect.LicenseTool/WireInspect.LicenseTool.csproj" "$rid" "WireInspect.LicenseTool" ;;
         *) warn "无效选择" ;;
     esac
 }
