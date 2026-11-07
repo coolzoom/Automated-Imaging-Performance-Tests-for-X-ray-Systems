@@ -3,14 +3,20 @@ import os
 from PySide2.QtCore import QSize, Qt, QTimer
 from PySide2.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap
 from PySide2.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog,
-                               QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-                               QRadioButton, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QToolBar,
+                               QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar,
+                               QPushButton, QRadioButton, QSizePolicy, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem,
                                QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 try:   # Qt6 moved QAction/QShortcut to QtGui; Qt5 has them in QtWidgets
     from PySide2.QtGui import QAction, QShortcut
 except ImportError:
     from PySide2.QtWidgets import QAction, QShortcut
+try:   # Qt6 namespaces enum members (QSizePolicy.Policy.Expanding)
+    SP_EXPAND = QSizePolicy.Expanding
+    SP_PREFERRED = QSizePolicy.Preferred
+except AttributeError:
+    SP_EXPAND = QSizePolicy.Policy.Expanding
+    SP_PREFERRED = QSizePolicy.Policy.Preferred
 
 from core import report
 from core.config import (DEFECT_TYPES, PRODUCTS_DIR, add_recent, load_config, recent_folders, type_color,
@@ -96,11 +102,7 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ layout
     def _build(self):
-        tb = QToolBar('主工具栏')
-        tb.setIconSize(QSize(18, 18))
-        tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        tb.setMovable(False)
-        self.addToolBar(tb)
+        # actions shared by the sidebar buttons (setDefaultAction keeps text/icon/enabled in sync)
         self.act_open = QAction('导入文件夹', self, triggered=lambda: self.open_folder())
         self.act_recent = QAction('最近文件夹', self)
         self.act_recent.setToolTip('重新打开最近用过的文件夹')
@@ -108,71 +110,107 @@ class MainWindow(QMainWindow):
         self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
         self.act_recent.setMenu(self.recent_menu)
         self.act_start = QAction('开始检测', self, triggered=lambda: self.start_detection(False))
-        self.act_stop = QAction('停止', self, triggered=self.stop_detection)
-        self.act_rerun = QAction('重新检测全部', self, triggered=lambda: self.start_detection(True))
+        self.act_stop = QAction('停止检测', self, triggered=self.stop_detection)
+        self.act_rerun = QAction('重新检测', self, triggered=lambda: self.start_detection(True))
         self.act_clear = QAction('清除标记', self)
         self.act_clear.setToolTip('清除当前图片 / 当前子文件夹 / 整个文件夹的所有缺陷标记')
-        clear_menu = QMenu(self)
-        clear_menu.addAction('清除当前图片的所有标记', lambda: self.clear_marks('image'))
-        self.act_clear_sub = clear_menu.addAction('清除当前子文件夹的所有标记', lambda: self.clear_marks('subfolder'))
-        clear_menu.addAction('清除整个文件夹的所有标记', lambda: self.clear_marks('folder'))
-        clear_menu.aboutToShow.connect(
+        self.clear_menu = QMenu(self)
+        self.clear_menu.addAction('清除当前图片的所有标记', lambda: self.clear_marks('image'))
+        self.act_clear_sub = self.clear_menu.addAction('清除当前子文件夹的所有标记', lambda: self.clear_marks('subfolder'))
+        self.clear_menu.addAction('清除整个文件夹的所有标记', lambda: self.clear_marks('folder'))
+        self.clear_menu.aboutToShow.connect(
             lambda: self.act_clear_sub.setEnabled(bool(self.current and '/' in self.current)))
-        self.act_clear.setMenu(clear_menu)
         self.act_report = QAction('保存报告', self, triggered=self.save_report)
+        self.act_report.setToolTip('整个文件夹的检测与复核结果导出为 CSV（汇总 + 导线明细）')
         self.act_settings = QAction('设置', self, triggered=self.open_settings)
         self.act_settings.setToolTip('运行参数（并行线程数、自动显示最新）')
-        self.act_report.setToolTip('整个文件夹的 CSV 报告：每图一行汇总 + 每根线明细')
         self.act_new_product = QAction('新建', self, triggered=lambda: self.edit_product(True))
-        self.act_new_product.setToolTip('新建产品：在当前图片上框选一个单元，半自动配置导线和阈值')
+        self.act_new_product.setToolTip('在当前图片上框选一个单元，自动找线，生成产品配置')
         self.act_edit_product = QAction('编辑', self, triggered=lambda: self.edit_product(False))
-        self.act_edit_product.setToolTip('编辑当前产品的导线和阈值')
         self.act_del_product = QAction('删除', self, triggered=self.delete_product)
-        self.act_del_product.setToolTip('删除当前产品')
+        self.act_del_product.setToolTip('删除当前选中产品的模板与配置（不可恢复）')
         for a, name in ((self.act_open, 'open'), (self.act_recent, 'recent'), (self.act_start, 'start'),
                         (self.act_stop, 'stop'), (self.act_rerun, 'rerun'), (self.act_clear, 'clear'),
                         (self.act_report, 'report'), (self.act_new_product, 'add'), (self.act_edit_product, 'edit'),
                         (self.act_del_product, 'del'), (self.act_settings, 'gear')):
             a.setIcon(tool_icon(name))
-        for a in (self.act_open, self.act_recent, None, self.act_start, self.act_stop, self.act_rerun, self.act_clear,
-                  None, self.act_report, None):
-            tb.addSeparator() if a is None else tb.addAction(a)
-        for a in (self.act_recent, self.act_clear):
-            tb.widgetForAction(a).setPopupMode(QToolButton.InstantPopup)
-        icon = QLabel()
-        icon.setPixmap(tool_icon('product').pixmap(18, 18))
-        tb.addWidget(icon)
-        tb.addWidget(QLabel(' 产品: '))
-        self.product_combo = QComboBox()
-        self.product_combo.setMinimumWidth(150)
-        self.product_combo.setToolTip('检测用的产品（products/<名称>/tpl.png + product.json）')
-        self.product_combo.currentTextChanged.connect(self._product_changed)
-        tb.addWidget(self.product_combo)
-        tb.addAction(self.act_new_product)
-        tb.addAction(self.act_edit_product)
-        tb.addAction(self.act_del_product)
-        tb.addSeparator()
-        self.chk_follow = QCheckBox('自动显示最新')
-        self.chk_follow.setChecked(True)
-        self.chk_follow.setToolTip('检测时自动切到刚完成的图片')
-        tb.addWidget(QLabel(' 操作员: '))
-        self.operator = QLineEdit(self.cfg.get('operator', ''))
-        self.operator.setFixedWidth(120)
-        self.operator.editingFinished.connect(self._operator_changed)
-        tb.addWidget(self.operator)
-        tb.addSeparator()
-        tb.addAction(self.act_settings)
         for a in (self.act_start, self.act_rerun, self.act_stop, self.act_report, self.act_clear):
             a.setEnabled(False)
 
-        # left: filter + tree
+        # left: sidebar (logo, button rows, product, operator) + filter + tree + legend — same as the C# layout
+        def tbtn(act, menu=None):
+            b = QToolButton()
+            b.setDefaultAction(act)
+            b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            b.setIconSize(QSize(16, 16))
+            sp = b.sizePolicy()
+            sp.setHorizontalPolicy(SP_EXPAND)
+            b.setSizePolicy(sp)
+            if menu:
+                b.setMenu(menu)
+                b.setPopupMode(QToolButton.InstantPopup)
+            return b
+
+        def pair(*ws):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(2)
+            for w in ws:
+                row.addWidget(w, 1)
+            return row
+
+        def sep():
+            f = QFrame()
+            f.setFrameShape(QFrame.HLine)
+            f.setStyleSheet('color:#274a75')
+            return f
+
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(4, 4, 4, 4)
+        lv.setSpacing(2)
         logo = QLabel()
         logo.setPixmap(logo_pixmap(160))
         logo.setAlignment(Qt.AlignCenter)
+        logo.setContentsMargins(0, 4, 0, 8)
         lv.addWidget(logo)
+        lv.addLayout(pair(tbtn(self.act_open), tbtn(self.act_recent, self.recent_menu), tbtn(self.act_report)))
+        lv.addWidget(sep())
+        lv.addLayout(pair(tbtn(self.act_start), tbtn(self.act_stop), tbtn(self.act_rerun)))
+        lv.addWidget(sep())
+        lv.addLayout(pair(tbtn(self.act_settings)))
+        lv.addWidget(sep())
+        prod = QHBoxLayout()
+        prod.setContentsMargins(2, 5, 0, 2)
+        pl = QLabel('产品')
+        pl.setStyleSheet('color:#8fa8c8')
+        prod.addWidget(pl)
+        prod.addStretch(1)
+        for i, a in enumerate((self.act_new_product, self.act_edit_product, self.act_del_product)):
+            if i:
+                prod.addSpacing(14)
+            b = tbtn(a)
+            sp = b.sizePolicy()
+            sp.setHorizontalPolicy(SP_PREFERRED)
+            b.setSizePolicy(sp)
+            prod.addWidget(b)
+        lv.addLayout(prod)
+        self.product_combo = QComboBox()
+        self.product_combo.setToolTip('检测用的产品（products/<名称>/tpl.png + product.json）')
+        self.product_combo.currentTextChanged.connect(self._product_changed)
+        lv.addWidget(self.product_combo)
+        lv.addWidget(sep())
+        op = QLabel('操作员')
+        op.setStyleSheet('color:#8fa8c8')
+        op.setContentsMargins(2, 5, 0, 2)
+        lv.addWidget(op)
+        self.operator = QLineEdit(self.cfg.get('operator', ''))
+        self.operator.editingFinished.connect(self._operator_changed)
+        lv.addWidget(self.operator)
+        self.chk_follow = QCheckBox('自动显示最新', self)
+        self.chk_follow.setVisible(False)
+        self.chk_follow.setChecked(True)
+        self.chk_follow.setToolTip('检测时自动切到刚完成的图片')
         self.filter = QComboBox()
         for name, _ in FILTERS:
             self.filter.addItem(name)
@@ -181,8 +219,9 @@ class MainWindow(QMainWindow):
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         self.tree.setIconSize(TREE_ICON)
+        self.tree.setStyleSheet('QTreeWidget{border:1px solid #274a75}')
         self.tree.currentItemChanged.connect(self._tree_changed)
-        lv.addWidget(self.tree)
+        lv.addWidget(self.tree, 1)
         legend = QLabel('  '.join('<span style="color:%s">●</span>%s' % (STATUS_COLORS[k], v)
                                   for k, v in STATUS_TEXT.items()))
         legend.setWordWrap(True)
@@ -194,7 +233,7 @@ class MainWindow(QMainWindow):
         cv.setContentsMargins(0, 0, 0, 0)
         bar = QHBoxLayout()
         self.mode_group = QButtonGroup(self)
-        for k, t in (('original', '原图'), ('enhanced', '增强(CLAHE)'), ('wire', '导线高亮')):
+        for k, t in (('original', '原图'), ('enhanced', '增强'), ('wire', '导线高亮')):
             rb = QRadioButton(t)
             rb.setProperty('mode', k)
             rb.setChecked(k == 'wire')
@@ -207,6 +246,13 @@ class MainWindow(QMainWindow):
         self.chk_marks.toggled.connect(lambda on: self.viewer.set_show_marks(on))
         bar.addWidget(self.chk_marks)
         bar.addStretch(1)
+        clr = QToolButton()
+        clr.setDefaultAction(self.act_clear)
+        clr.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        clr.setIconSize(QSize(16, 16))
+        clr.setMenu(self.clear_menu)
+        clr.setPopupMode(QToolButton.InstantPopup)
+        bar.addWidget(clr)
         for t, fn in (('适应窗口(0)', lambda: self.viewer.fit()), ('1:1 (1)', lambda: self.viewer.actual_size()),
                       ('放大', lambda: self.viewer.zoom(1.25)), ('缩小', lambda: self.viewer.zoom(0.8))):
             b = QPushButton(t)
@@ -287,7 +333,7 @@ class MainWindow(QMainWindow):
         split.addWidget(center)
         split.addWidget(right)
         split.setStretchFactor(1, 1)
-        split.setSizes([300, 1000, 380])
+        split.setSizes([300, 1000, 360])
         self.setCentralWidget(split)
 
         self.progress = QProgressBar()
@@ -295,15 +341,13 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.counts_label = QLabel()
         self.counts_label.setTextFormat(Qt.RichText)
-        self.statusBar().addPermanentWidget(self.counts_label)
-        self.statusBar().addPermanentWidget(self.progress)
         self.lic_label = QLabel()
         self.lic_label.setStyleSheet('color:#8fa8c8')
         self.btn_license = QPushButton('授权')
         self.btn_license.setFlat(True)
         self.btn_license.clicked.connect(self.change_license)
-        self.statusBar().addPermanentWidget(self.lic_label)
-        self.statusBar().addPermanentWidget(self.btn_license)
+        for w in (self.lic_label, self.btn_license, self.counts_label, self.progress):
+            self.statusBar().addPermanentWidget(w)
         self._mode_clicked(self.mode_group.checkedButton())
         self._update_review_controls()
         self._refresh_license_label()
@@ -465,12 +509,16 @@ class MainWindow(QMainWindow):
         workers.setValue(int(self.cfg.get('workers') or 0))
         workers.setFixedWidth(140)
         lay.addWidget(workers)
-        lay.addWidget(self.chk_follow)
+        chk_follow = QCheckBox('自动显示最新')
+        chk_follow.setChecked(self.chk_follow.isChecked())
+        chk_follow.setToolTip('检测时自动切到刚完成的图片')
+        lay.addWidget(chk_follow)
         bb = QDialogButtonBox(QDialogButtonBox.Ok)
         bb.accepted.connect(dlg.accept)
         lay.addWidget(bb)
         if dlg.exec_() == QDialog.Accepted:
             self.cfg['workers'] = workers.value()
+            self.chk_follow.setChecked(chk_follow.isChecked())
             update_config(workers=workers.value())
 
     def delete_product(self):
@@ -978,12 +1026,13 @@ class MainWindow(QMainWindow):
 
     def _set_running(self, on):
         for a in (self.act_start, self.act_rerun, self.act_open, self.act_recent, self.act_clear,
-                  self.act_new_product, self.act_edit_product):
+                  self.act_new_product, self.act_edit_product, self.act_del_product):
             a.setEnabled(not on)
         self.product_combo.setEnabled(not on)
         self.act_stop.setEnabled(on)
         if not on:
             self.act_edit_product.setEnabled(self.product is not None)
+            self.act_del_product.setEnabled(self.product is not None)
 
     def start_detection(self, rerun_all):
         if not self.session or self._busy():
