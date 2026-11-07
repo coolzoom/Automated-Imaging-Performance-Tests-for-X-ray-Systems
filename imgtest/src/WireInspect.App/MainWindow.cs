@@ -52,7 +52,7 @@ public sealed class MainWindow : Window
     bool _running, _loadingProducts;
 
     // controls
-    readonly Button _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct;
+    readonly Button _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct, _btnSettings;
     readonly ComboBox _productCombo = new() { MinWidth = 150 };
     readonly CheckBox _chkFollow = new() { Content = "自动显示最新", IsChecked = true };
     readonly TextBox _operator = new();
@@ -92,12 +92,13 @@ public sealed class MainWindow : Window
         _btnOpen = Icons.ToolButton("open", "导入文件夹");
         _btnRecent = Icons.ToolButton("recent", "最近文件夹", "重新打开最近用过的文件夹");
         _btnStart = Icons.ToolButton("start", "开始检测", "检测还没有结果的图片");
-        _btnStop = Icons.ToolButton("stop", "停止");
-        _btnRerun = Icons.ToolButton("rerun", "重新检测全部");
+        _btnStop = Icons.ToolButton("stop", "停止检测");
+        _btnRerun = Icons.ToolButton("rerun", "重新检测");
         _btnClear = Icons.ToolButton("clear", "清除标记", "清除当前图片 / 当前子文件夹 / 整个文件夹的所有缺陷标记");
         _btnReport = Icons.ToolButton("report", "保存报告", "整个文件夹的检测与复核结果导出为 CSV（汇总 + 导线明细）");
         _btnNewProduct = Icons.ToolButton("add", "新建产品", "在当前图片上框选一个单元，自动找线，生成产品配置");
         _btnEditProduct = Icons.ToolButton("edit", "编辑产品");
+        _btnSettings = Icons.ToolButton("gear", "设置", "运行参数（并行线程数）");
         Content = Build();
         Wire();
         LoadProducts(_cfg.Product);
@@ -131,16 +132,22 @@ public sealed class MainWindow : Window
         var logo = new Image
         {
             Source = new Bitmap(AssetLoader.Open(new Uri("avares://WireInspect/Assets/logo.png"))),
-            Stretch = Stretch.Uniform, Margin = new Thickness(0, 4, 0, 8),
+            Stretch = Stretch.Uniform, MaxHeight = 120, Margin = new Thickness(0, 4, 0, 8),
         };
+        var productRow = new DockPanel { Margin = new Thickness(0, 5, 0, 2) };
+        var productLabel = new TextBlock { Text = "产品", Foreground = Brush.Parse("#8fa8c8"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0) };
+        var productButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { _btnNewProduct, _btnEditProduct } };
+        DockPanel.SetDock(productButtons, Dock.Right);
+        productRow.Children.Add(productButtons);
+        productRow.Children.Add(productLabel);
         var side = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 0, 6) };
-        foreach (var c in new Control[] { logo, Pair(_btnOpen, _btnRecent), Sep(), Pair(_btnStart, _btnStop), _btnRerun, Sep(), _btnReport, Sep(),
-                     Label("产品"), _productCombo, Pair(_btnNewProduct, _btnEditProduct), Sep(), Label("操作员"), _operator })
+        foreach (var c in new Control[] { logo, Pair(_btnOpen, _btnRecent, _btnReport), Sep(), Pair(_btnStart, _btnStop, _btnRerun), Sep(), _btnSettings, Sep(),
+                     productRow, _productCombo, Sep(), Label("操作员"), _operator })
         {
             c.HorizontalAlignment = HorizontalAlignment.Stretch;
             side.Children.Add(c);
         }
-        foreach (var b in new Button[] { _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct })
+        foreach (var b in new Button[] { _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnSettings, _btnNewProduct, _btnEditProduct })
             b.HorizontalContentAlignment = HorizontalAlignment.Left;
         _operator.Text = _cfg.Operator;
 
@@ -172,13 +179,12 @@ public sealed class MainWindow : Window
             modes.Children.Add(rb);
         }
         modes.Children.Add(new Border { Width = 16 });
-        modes.Children.Add(_chkMarks);
-        modes.Children.Add(new Border { Width = 16 });
-        _btnClear.VerticalAlignment = VerticalAlignment.Center;
-        modes.Children.Add(_btnClear);
-        _chkFollow.VerticalAlignment = VerticalAlignment.Center;
-        modes.Children.Add(_chkFollow);
+        var viewOptions = new Button { Content = "显示选项 ▾", Padding = new Thickness(8, 3) };
+        viewOptions.Flyout = new Flyout { Content = new StackPanel { Margin = new Thickness(10), Spacing = 8, Children = { _chkMarks, _chkFollow } } };
+        modes.Children.Add(viewOptions);
         var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        _btnClear.VerticalAlignment = VerticalAlignment.Center;
+        zoom.Children.Add(_btnClear);
         foreach (var (t, fn) in new (string, Action)[] { ("适应窗口(0)", _viewer.Fit), ("1:1 (1)", _viewer.ActualSize),
                      ("放大", () => _viewer.Zoom(1.25)), ("缩小", () => _viewer.Zoom(0.8)) })
         {
@@ -313,6 +319,7 @@ public sealed class MainWindow : Window
         _btnReport.Click += async (_, _) => await SaveReport();
         _btnNewProduct.Click += async (_, _) => await OpenProductDialog(false);
         _btnEditProduct.Click += async (_, _) => await OpenProductDialog(true);
+        _btnSettings.Click += async (_, _) => await OpenSettings();
         _productCombo.SelectionChanged += (_, _) => { if (!_loadingProducts) SelectProduct(_productCombo.SelectedItem as string); };
         _operator.LostFocus += (_, _) =>
         {
@@ -454,6 +461,30 @@ public sealed class MainWindow : Window
         }
         UpdateEnabled();
         if (_current != null) RefreshDefects();
+    }
+
+    async Task OpenSettings()
+    {
+        var workers = new NumericUpDown { Minimum = 0, Maximum = 32, Increment = 1, Value = _cfg.Workers, Width = 140, FormatString = "0" };
+        var ok = new Button { Content = "确定", IsDefault = true, MinWidth = 90, HorizontalAlignment = HorizontalAlignment.Right };
+        var dlg = new Window
+        {
+            Title = "设置", SizeToContent = SizeToContent.WidthAndHeight, CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(18), Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = "并行检测线程数（0 = 自动，CPU 核数 - 1）" },
+                    workers, ok,
+                },
+            },
+        };
+        ok.Click += (_, _) => dlg.Close();
+        await dlg.ShowDialog(this);
+        _cfg.Workers = (int)(workers.Value ?? 0);
+        AppConfig.Update(c => c.Workers = _cfg.Workers);
     }
 
     async Task OpenProductDialog(bool edit)

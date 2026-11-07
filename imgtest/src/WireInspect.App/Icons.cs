@@ -30,6 +30,8 @@ public static class Icons
                        new P("M9 6.5V3.5M12 6.5V3.5M15 6.5V3.5M9 20.5v-3M12 20.5v-3M15 20.5v-3M3.5 9h3M3.5 12h3M3.5 15h3M17.5 9h3M17.5 12h3M17.5 15h3")],
         ["add"] = [new C(12, 12, 9, "#e8f6ee", "#18a848"), new P("M12 7.5v9M7.5 12h9", null, "#18a848")],
         ["edit"] = [new P("M4 20h4L19.5 8.5l-4-4L4 16z", "#fff4cc", "#b8860b"), new P("M13.5 6.5l4 4")],
+        ["gear"] = [new C(12, 12, 4.5),
+                    new P("M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2")],
     };
 
     public static Control Get(string name, double size = 18)
@@ -61,10 +63,10 @@ public static class Icons
         {
             Content = new StackPanel
             {
-                Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 5,
-                Children = { Get(icon), new TextBlock { Text = text, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center } },
+                Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4,
+                Children = { Get(icon, 15), new TextBlock { Text = text, FontSize = 13, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center } },
             },
-            Padding = new Thickness(7, 4), Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+            Padding = new Thickness(4, 4), Background = Brushes.Transparent, BorderThickness = new Thickness(0),
         };
         if (tip != null) ToolTip.SetTip(b, tip);
         return b;
