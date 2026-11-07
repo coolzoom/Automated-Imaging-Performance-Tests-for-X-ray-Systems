@@ -21,6 +21,13 @@ public sealed class App : Application
             desktop.MainWindow = w;
             var folder = desktop.Args?.FirstOrDefault(Directory.Exists);
             if (folder != null) w.Opened += (_, _) => w.OpenFolder(folder);
+            if (WireInspect.Core.License.Required())
+                w.Opened += async (_, _) =>
+                {
+                    var lic = await LicenseDialog.Obtain(w);
+                    if (lic == null) w.Close();
+                    else w.SetLicense(lic);
+                };
         }
         base.OnFrameworkInitializationCompleted();
     }

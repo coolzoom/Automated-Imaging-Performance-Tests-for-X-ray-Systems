@@ -4,6 +4,9 @@
     <Project Path="src/WireInspect.Cli/WireInspect.Cli.csproj" />
     <Project Path="src/WireInspect.Core/WireInspect.Core.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/WireInspect.LicenseTool/WireInspect.LicenseTool.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/WireInspect.Tests/WireInspect.Tests.csproj" />
     <Project Path="tests/WireInspect.UiTests/WireInspect.UiTests.csproj" />

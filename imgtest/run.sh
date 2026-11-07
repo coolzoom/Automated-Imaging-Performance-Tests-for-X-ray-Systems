@@ -121,6 +121,7 @@ do_build()   { sdk_ok || die "请先运行 [1] 环境配置"; say "编译 Releas
 do_test()    { sdk_ok || die "请先运行 [1] 环境配置"; dotnet test "$SLN" -c Release; }
 do_gui()     { sdk_ok || die "请先运行 [1] 环境配置"; read -rp "图片文件夹路径(可留空): " f; dotnet run --project "$APP" -- ${f:+"$f"}; }
 do_cli()     { sdk_ok || die "请先运行 [1] 环境配置"; echo "例: detect <img> --product 2_8_4_demo [--simulate 1 4 7]"; read -rp "CLI 参数: " a; dotnet run --project "$CLI" -- $a; }
+do_license() { sdk_ok || die "请先运行 [1] 环境配置"; dotnet run --project tools/WireInspect.LicenseTool -- "$@"; }
 do_pack() {
     sdk_ok || die "请先运行 [1] 环境配置"
     local rid
@@ -148,6 +149,7 @@ while true; do
  5) 打包 native 单文件
  6) 运行测试
  7) 一键全流程 (1 -> 2 -> 5)
+ 8) 签发授权（注册机）
  0) 退出
 =========================================
 EOF
@@ -160,6 +162,7 @@ EOF
         5) do_pack ;;
         6) do_test ;;
         7) do_env; do_build; do_pack ;;
+        8) do_license ;;
         0) exit 0 ;;
         *) warn "无效选项" ;;
     esac

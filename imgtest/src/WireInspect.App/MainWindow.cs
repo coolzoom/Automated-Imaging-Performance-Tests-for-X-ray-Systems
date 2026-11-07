@@ -77,6 +77,9 @@ public sealed partial class MainWindow : Window
     readonly CheckBox _chkAutoNext = new() { Content = "判定后自动跳到下一张", IsChecked = true };
     readonly TextBox _comment = new() { Height = 70, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };
     readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0) };
+    readonly TextBlock _licLabel = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0), Foreground = Brush.Parse("#8fa8c8") };
+    readonly Button _btnLicense = new() { Content = "授权", Padding = new Thickness(6, 0), Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Center };
+    public License? Lic { get; private set; }
     readonly TextBlock _counts = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0) };
     readonly ProgressBar _progress = new() { Width = 220, IsVisible = false, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock _progressText = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0), IsVisible = false };
@@ -287,7 +290,7 @@ public sealed partial class MainWindow : Window
         main.Children.Add(right);
 
         var statusBar = new DockPanel { Background = Brush.Parse("#0b1c33"), Height = 26 };
-        var perm = new StackPanel { Orientation = Orientation.Horizontal, Children = { _counts, _progressText, _progress } };
+        var perm = new StackPanel { Orientation = Orientation.Horizontal, Children = { _licLabel, _btnLicense, _counts, _progressText, _progress } };
         DockPanel.SetDock(perm, Dock.Right);
         statusBar.Children.Add(perm);
         statusBar.Children.Add(_status);
@@ -314,6 +317,7 @@ public sealed partial class MainWindow : Window
         _btnDelProduct.Click += async (_, _) => await DeleteProduct();
         _btnSettings.Click += async (_, _) => await OpenSettings();
         _btnMcp.Click += async (_, _) => await new McpDialog(this).ShowDialog(this);
+        _btnLicense.Click += async (_, _) => await ChangeLicense();
         _productCombo.SelectionChanged += (_, _) => { if (!_loadingProducts) SelectProduct(_productCombo.SelectedItem as string); };
         _operator.LostFocus += (_, _) =>
         {
@@ -456,6 +460,21 @@ public sealed partial class MainWindow : Window
         }
         UpdateEnabled();
         if (_current != null) RefreshDefects();
+    }
+
+    /// <summary>Record the license obtained at start-up (null when licenses are not enforced) and show it.</summary>
+    public void SetLicense(License? lic)
+    {
+        Lic = lic;
+        _licLabel.Text = lic == null ? "" : "授权: " + lic.Summary();
+        ToolTip.SetTip(_licLabel, lic == null ? null : "机器码 " + lic.Data.GetValueOrDefault("machine", ""));
+    }
+
+    async Task ChangeLicense()
+    {
+        var dlg = new LicenseDialog(Lic == null ? "当前未授权。" : "当前授权：" + Lic.Summary(), null);
+        await dlg.ShowDialog(this);
+        if (dlg.Result != null) SetLicense(dlg.Result);
     }
 
     async Task DeleteProduct()

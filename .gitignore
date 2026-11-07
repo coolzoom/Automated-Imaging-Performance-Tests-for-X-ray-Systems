@@ -1,2 +1,5 @@
 /imgtest/py/core/__pycache__
 /imgtest/py/core/__pycache__
+
+# license signing keys / issued .lic files — never commit
+license_keys/

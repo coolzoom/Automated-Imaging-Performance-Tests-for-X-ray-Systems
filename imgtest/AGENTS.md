@@ -24,6 +24,9 @@
 - GUI: `dotnet run --project src/WireInspect.App [folder]`
 - CLI: `dotnet run --project src/WireInspect.Cli -- detect <img> --product 2_8_4_demo [--simulate 1 4 7]`
 - Windows build: `dotnet publish src/WireInspect.App -c Release -r win-x64 --self-contained` (copy `products/` next to the exe)
+- License issuer (注册机): `dotnet run --project tools/WireInspect.LicenseTool` (interactive) or `--machine/--customer/--days`;
+  `--keygen --write` makes a new keypair (public key then goes into `License.PublicKey`); `--mymachine` prints this PC's code.
+  Private key lives in `../license_keys/` (repo-external, git-ignored) — never commit it.
 
 ## Notes
 - Root folder is found by walking up from the executable to a folder containing `products/`; override with `WIREINSPECT_HOME`.
@@ -41,6 +44,10 @@
   (`Align.MergeMirrored`: mirrored only if it scores clearly better where both sides found units).
 - All lengths in pixels (`*_px` in product.json; old `*_um` + `pixel_um` files are converted on load). No µm anywhere.
 - `py/core/align.py` + `py/core/inspect.py` mirror `Align.cs` + `Inspector.cs`; check both with `cd py && .venv/bin/python xval/compare.py`.
+- License: `License.cs` — Ed25519-signed `{"license":{id,customer,machine,edition,issued,expires},"sig":b64}` bound to
+  `MachineCode()` (ioreg/MachineGuid/machine-id, first NIC as fallback). Enforced only in single-file bundles or with
+  `WIREINSPECT_FORCE_LICENSE=1` (dev runs are free). State in `~/Library/Application Support/WireInspect/` (license.lic,
+  trial.dat, clock.json); 7-day trial dual-recorded + clock-rollback reject. `edition` demo|full, `Lic.Demo` for gating.
 - Keep the C# numbers in line with wire_inspect.py when changing Inspector.InspectWire.
 
 ## Debugging unit detection (MCP workflow)
