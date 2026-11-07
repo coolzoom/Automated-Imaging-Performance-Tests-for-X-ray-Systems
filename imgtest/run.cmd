@@ -7,6 +7,7 @@ pushd "%~dp0"
 set "SLN=WireInspect.slnx"
 set "APP=src\WireInspect.App\WireInspect.App.csproj"
 set "CLI=src\WireInspect.Cli\WireInspect.Cli.csproj"
+set "LICTOOL=tools\WireInspect.LicenseTool\WireInspect.LicenseTool.csproj"
 set "PUB_ROOT=out\publish"
 
 :menu
@@ -19,6 +20,7 @@ echo  4^) 运行 CLI
 echo  5^) 打包 native 单文件
 echo  6^) 运行测试
 echo  7^) 一键全流程 (1 -^> 2 -^> 5)
+echo  8^) 签发授权（注册机）
 echo  0^) 退出
 echo =========================================
 set "c="
@@ -31,6 +33,7 @@ if "%c%"=="4" goto cli
 if "%c%"=="5" goto pack
 if "%c%"=="6" goto test
 if "%c%"=="7" goto all
+if "%c%"=="8" goto license
 if "%c%"=="0" goto end
 echo [!] 无效选项
 goto menu
@@ -100,6 +103,11 @@ call :need_sdk || ( pause & goto menu )
 dotnet test "%SLN%" -c Release
 pause & goto menu
 
+:license
+call :need_sdk || ( pause & goto menu )
+dotnet run --project "%LICTOOL%"
+pause & goto menu
+
 :pack
 call :need_sdk || ( pause & goto menu )
 echo 选择目标平台 RID:
@@ -116,13 +124,14 @@ if "%r%"=="4" set "RID=osx-x64"
 if "%r%"=="5" set "RID=linux-x64"
 if "%r%"=="6" set "RID=linux-arm64"
 if not defined RID ( echo [x] 无效选择 & pause & goto menu )
-echo 打包哪个项目?  1^) GUI (WireInspect)  2^) CLI (WireInspect.Cli)  3^) 两者
+echo 打包哪个项目?  1^) GUI (WireInspect)  2^) CLI (WireInspect.Cli)  3^) 两者  4^) 注册机 (WireInspect.LicenseTool)
 set "p="
 set /p "p=选择 [1]: "
 if "%p%"=="" set "p=1"
 if "%p%"=="1" ( call :publish "%APP%" "WireInspect" & goto pack_done )
 if "%p%"=="2" ( call :publish "%CLI%" "WireInspect.Cli" & goto pack_done )
 if "%p%"=="3" ( call :publish "%APP%" "WireInspect" & call :publish "%CLI%" "WireInspect.Cli" & goto pack_done )
+if "%p%"=="4" ( call :publish "%LICTOOL%" "WireInspect.LicenseTool" & goto pack_done )
 echo [x] 无效选择
 :pack_done
 pause & goto menu

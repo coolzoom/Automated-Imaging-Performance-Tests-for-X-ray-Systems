@@ -126,12 +126,13 @@ do_pack() {
     sdk_ok || die "请先运行 [1] 环境配置"
     local rid
     rid=$(pick_rid) || { warn "RID 选择无效"; return; }
-    echo "打包哪个项目?  1) GUI (WireInspect)  2) CLI (WireInspect.Cli)  3) 两者"
+    echo "打包哪个项目?  1) GUI (WireInspect)  2) CLI (WireInspect.Cli)  3) 两者  4) 注册机 (WireInspect.LicenseTool)"
     read -rp "选择 [1]: " p
     case "${p:-1}" in
         1) publish "$APP" "$rid" "WireInspect" ;;
         2) publish "$CLI" "$rid" "WireInspect.Cli" ;;
         3) publish "$APP" "$rid" "WireInspect"; publish "$CLI" "$rid" "WireInspect.Cli" ;;
+        4) publish "tools/WireInspect.LicenseTool/WireInspect.LicenseTool.csproj" "$rid" "WireInspect.LicenseTool" ;;
         *) warn "无效选择" ;;
     esac
 }
