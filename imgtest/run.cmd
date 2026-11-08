@@ -1,7 +1,7 @@
 @echo off
+chcp 65001 >nul 2>&1
 rem WireInspect 一键脚本：环境配置 / 编译 / 运行 / 打包 native 单文件
 setlocal
-chcp 65001 >nul 2>&1
 pushd "%~dp0"
 
 set "SLN=WireInspect.slnx"

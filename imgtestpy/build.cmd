@@ -1,8 +1,9 @@
 @echo off
+chcp 65001 >nul
 rem  X-Ray 焊线检测（Python/Win7 版）一键菜单
 rem  目标机：Windows 7 SP1 x64 及以上。打包请在装了 Python 3.8 x64 的机器上执行。
 setlocal EnableDelayedExpansion
-cd /d %~dp0
+pushd "%~dp0"
 
 :menu
 echo.
@@ -25,26 +26,26 @@ goto menu
 
 :: ------------------------------------------------------------------
 :find_py
-rem  优先 .venv，其次 py -3.8 / python（要求 3.8.x）
-if exist ".venv\Scripts\python.exe" (set PY=.venv\Scripts\python.exe& exit /b 0)
+rem  优先 .venv-win（Windows 专用，避开 mac/Linux 的 .venv），其次 py -3.8 / python（要求 3.8.x）
+if exist ".venv-win\Scripts\python.exe" (set PY=.venv-win\Scripts\python.exe& exit /b 0)
 where py >nul 2>&1 && py -3.8 -c "import sys" >nul 2>&1 && (set "PY=py -3.8"& exit /b 0)
 where python >nul 2>&1 && (set PY=python& exit /b 0)
-echo !! 找不到 Python。请安装 Python 3.8 x64: https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe
+echo ^!^! 找不到 Python。请安装 Python 3.8 x64: https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe
 exit /b 1
 
 :setup
 call :find_py || (pause& goto menu)
 echo 解释器: %PY%
-%PY% -c "import sys;print(sys.version); sys.exit(sys.version_info[:2] != (3, 8))"
-if errorlevel 1 (echo !! 需要 Python 3.8（Win7 支持的最后一个版本）& pause& goto menu)
-if not exist ".venv\Scripts\python.exe" (
-    echo -- 创建 .venv ...
-    %PY% -m venv .venv || (echo !! venv 创建失败& pause& goto menu)
+%PY% -c "import sys;print(sys.version); sys.exit(0 if sys.version_info[:2]==(3,8) else 1)"
+if errorlevel 1 (echo ^!^! 需要 Python 3.8（Win7 支持的最后一个版本）& pause& goto menu)
+if not exist ".venv-win\Scripts\python.exe" (
+    echo -- 创建 .venv-win ...
+    %PY% -m venv .venv-win || (echo ^!^! venv 创建失败& pause& goto menu)
 )
-set PY=.venv\Scripts\python.exe
+set PY=.venv-win\Scripts\python.exe
 %PY% -m pip install -U "pip<24.1" setuptools wheel
 %PY% -m pip install -r requirements-win7.txt --only-binary=:all:
-if errorlevel 1 (echo !! 依赖安装失败& pause& goto menu)
+if errorlevel 1 (echo ^!^! 依赖安装失败& pause& goto menu)
 echo 环境就绪。
 pause & goto menu
 
@@ -81,7 +82,7 @@ goto pack
 echo -- 打包检测程序 ...
 if exist build\WireInspectPy rmdir /s /q build\WireInspectPy
 if exist dist\WireInspect rmdir /s /q dist\WireInspect
-%PY% -m PyInstaller --noconfirm --clean WireInspectPy.spec || (echo !! 打包失败& exit /b 1)
+%PY% -m PyInstaller --noconfirm --clean WireInspectPy.spec || (echo ^!^! 打包失败& exit /b 1)
 if exist products xcopy /E /I /Y products "dist\WireInspect\products" >nul
 echo    输出: dist\WireInspect\WireInspect.exe
 exit /b 0
@@ -90,7 +91,7 @@ exit /b 0
 echo -- 打包注册机 ...
 if exist build\LicenseTool rmdir /s /q build\LicenseTool
 if exist dist\WireInspectLicense rmdir /s /q dist\WireInspectLicense
-%PY% -m PyInstaller --noconfirm --clean LicenseTool.spec || (echo !! 打包失败& exit /b 1)
+%PY% -m PyInstaller --noconfirm --clean LicenseTool.spec || (echo ^!^! 打包失败& exit /b 1)
 rem  私钥自动拷贝到 <exe>\license_keys\（注册机只发内部，勿给客户）
 set KEY=..\license_keys\vendor_ed25519.key
 if exist "%KEY%" (
