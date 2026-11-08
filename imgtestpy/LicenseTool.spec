@@ -13,7 +13,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=['PyQt5', 'PyQt6', 'PySide6', 'tkinter', 'matplotlib', 'scipy', 'PIL'],
     noarchive=False,
-    optimize=0,
 )
 pyz = PYZ(a.pure)
 
