@@ -99,7 +99,7 @@ public sealed partial class MainWindow : Window
         _btnStop = Icons.ToolButton("stop", "停止检测");
         _btnRerun = Icons.ToolButton("rerun", "重新检测");
         _btnClear = Icons.ToolButton("clear", "清除标记", "清除当前图片 / 当前子文件夹 / 整个文件夹的所有缺陷标记");
-        _btnReport = Icons.ToolButton("report", "保存报告", "整个文件夹的检测与复核结果导出为 CSV（汇总 + 导线明细）");
+        _btnReport = Icons.ToolButton("report", "保存报告", "整个文件夹的检测与复核结果导出为交互式 HTML 报告（附 CSV 明细）");
         _btnNewProduct = Icons.ToolButton("add", "新建", "在当前图片上框选一个单元，自动找线，生成产品配置");
         _btnEditProduct = Icons.ToolButton("edit", "编辑");
         _btnDelProduct = Icons.ToolButton("del", "删除", "删除当前选中产品的模板与配置（不可恢复）");
@@ -1173,8 +1173,8 @@ public sealed partial class MainWindow : Window
         var name = Path.GetFileName(_session.Root.TrimEnd('/', '\\'));
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "保存报告", SuggestedFileName = $"{name}_报告_{DateTime.Now:yyyyMMdd_HHmm}.csv", DefaultExtension = "csv",
-            FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }],
+            Title = "保存报告", SuggestedFileName = $"{name}_报告_{DateTime.Now:yyyyMMdd_HHmm}.html", DefaultExtension = "html",
+            FileTypeChoices = [new FilePickerFileType("HTML 报告") { Patterns = ["*.html"] }, new FilePickerFileType("CSV") { Patterns = ["*.csv"] }],
             SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(_session.Root),
         });
         var path = file?.TryGetLocalPath();
@@ -1182,8 +1182,17 @@ public sealed partial class MainWindow : Window
         try
         {
             _session.Save();
-            var (sum, det) = CsvReport.Write(_session, path);
-            await Dialogs.Info(this, "保存报告", $"已保存：\n{sum}\n{det}");
+            if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+            {
+                var (sum, det) = CsvReport.Write(_session, path);
+                await Dialogs.Info(this, "保存报告", $"已保存：\n{sum}\n{det}");
+            }
+            else
+            {
+                var html = HtmlReport.WriteHtml(_session, _session.Files, path);
+                var (sum, det) = CsvReport.Write(_session, Path.ChangeExtension(path, ".csv"));
+                await Dialogs.Info(this, "保存报告", $"已保存：\n{html}\n{sum}\n{det}");
+            }
         }
         catch (Exception e) { await Dialogs.Info(this, "保存失败", e.Message); }
     }

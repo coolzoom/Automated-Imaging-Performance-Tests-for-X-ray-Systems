@@ -72,6 +72,15 @@ public class StoreTests
         Assert.Equal(3, File.ReadAllLines(sum).Length);
         Assert.Equal(1 + 36, File.ReadAllLines(det).Length);
 
+        var html = HtmlReport.WriteHtml(s2, s2.Files, Path.Combine(tmp.Path, "report.html"));
+        var doc = File.ReadAllText(html);
+        Assert.Contains("X-Ray 焊线检测报告", doc);
+        Assert.Contains("data-status", doc);
+        Assert.Contains("polyline", doc);   // wire curves
+        Assert.Contains("data:image/jpeg;base64,", doc);   // embedded images
+        Assert.Contains("张三", doc);       // reviewer
+        Assert.Contains("a.png", doc);
+
         s2.ClearMarks(["a.png"]);
         Assert.Equal(Session.Unchecked, s2.Status("a.png"));
     }

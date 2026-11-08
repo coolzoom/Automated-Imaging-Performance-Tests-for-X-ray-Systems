@@ -120,7 +120,7 @@ class MainWindow(QMainWindow):
         self.clear_menu.aboutToShow.connect(
             lambda: self.act_clear_sub.setEnabled(bool(self.current and '/' in self.current)))
         self.act_report = QAction('保存报告', self, triggered=self.save_report)
-        self.act_report.setToolTip('整个文件夹的检测与复核结果导出为 CSV（汇总 + 导线明细）')
+        self.act_report.setToolTip('整个文件夹的检测与复核结果导出为交互式 HTML 报告（附 CSV 明细）')
         self.act_settings = QAction('设置', self, triggered=self.open_settings)
         self.act_settings.setToolTip('运行参数（并行线程数、自动显示最新）')
         self.act_new_product = QAction('新建', self, triggered=lambda: self.edit_product(True))
@@ -1147,17 +1147,24 @@ class MainWindow(QMainWindow):
             return
         out = os.path.join(self.session.root, 'report_wire')
         os.makedirs(out, exist_ok=True)
-        path, _ = QFileDialog.getSaveFileName(self, '保存报告', os.path.join(out, '焊线检测报告.csv'), 'CSV (*.csv)')
+        path, _ = QFileDialog.getSaveFileName(self, '保存报告', os.path.join(out, '焊线检测报告.html'),
+                                            'HTML 报告 (*.html);;CSV (*.csv)')
         if not path:
             return
         self.session.data['operator'] = self.operator.text()
         self.session.save()
         try:
-            summ, det = report.write(self.session, path)
+            if path.lower().endswith('.csv'):
+                summ, det = report.write(self.session, path)
+                QMessageBox.information(self, '完成', '报告已保存:\n%s\n%s' % (summ, det))
+            else:
+                from core import html_report
+                html_path = html_report.write_html(self.session, self.session.files, path)
+                csv_path = os.path.splitext(path)[0] + '.csv'
+                report.write(self.session, csv_path)
+                QMessageBox.information(self, '完成', '报告已保存:\n%s\n（CSV 明细在同名 .csv 文件）' % html_path)
         except OSError as e:
             QMessageBox.critical(self, '错误', '保存报告失败:\n%s' % e)
-            return
-        QMessageBox.information(self, '完成', '报告已保存:\n%s\n%s' % (summ, det))
 
     # ------------------------------------------------------------------ lifecycle
     def _save_session(self):
