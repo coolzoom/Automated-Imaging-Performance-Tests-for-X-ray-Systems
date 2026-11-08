@@ -20,8 +20,21 @@ NUMBERS = [('match_thr', '模板匹配阈值', 0.2, 0.99, 0.05, 2), ('wire_width
            ('sweep_max_pct', 'sweep 上限 %', 0, 100, 0.5, 1), ('z_missing', 'z 缺线阈值', 0, 100, 0.5, 1),
            ('z_seg', 'z 分段阈值', 0, 100, 0.5, 1), ('z_ball', 'z 焊点阈值', 0, 100, 0.5, 1),
            ('max_angle_deg', '单元旋转范围 ±°', 0, 180, 5, 1), ('align_search_px', '局部校正搜索 px', 0, 200, 1, 1)]
-TIPS = {'max_angle_deg': '单元相对模板最多转多少度：180 = 任意方向（每个单元各自找角度），0 = 只找正放的单元（最快）',
-        'align_search_px': '每个单元分 2×2 块在这个范围内重新匹配，拟合仿射，修正局部扭曲 / 缩放'}
+TIPS = {
+ 'match_thr': '单元模板匹配分（0~1）及格线：低于此分的图像区域不认作单元。\n调低 → 位置偏/变形大的单元也能找到，但误检增多；\n调高 → 只收高度相似的单元，可能漏检。常用 0.5~0.8。',
+ 'wire_width_px': '预计的导线直径（px），用于沿线逐列采样脊线强度，≈实际线径。\n设大 → 相邻导线/边缘干扰计入，z 虚高；\n设小 → 采不到线芯，z 偏低 → 误报断线/缺线。',
+ 'corridor_px': '以“焊点1→焊点2”连线为中心、允许导线摆动的半宽（px），须盖住最大线弧。\n太小 → 弧度大的线被截断，误报断线；\n太大 → 相邻导线干扰、速度慢。',
+ 'end_tol_px': '线头/线尾允许多少 px 无响应而不报焊点异常（BOND1/BOND2）。\n须盖住导线在焊球下消失的距离；\n太大 → 真从根部断开的线会漏检。',
+ 'gap_max_px': '中段允许的最长无响应段（px），超过报断线（BROKEN）。\n影像中段发虚的线要调大；太大 → 真断线漏检。',
+ 'shift_max_px': '拟合出的线端点与标定焊点的垂直偏移上限（px），超过报焊点偏移（SHIFT）。\n反映线歪/键合偏；正常散布大的产品要放宽。',
+ 'sweep_max_pct': '导线最大拱高 ÷ 线长（%）。超过报线弧异常（SWEEP）。',
+ 'z_missing': '整根线的平均信号强度 z（相对走廊背景噪声，按长度归一）。\n正常线 10~16；发虚线 3~6；无线 ≈0。\nz 低于此值 → 缺线（MISSING）。',
+ 'z_seg': '线按分段数均分，任一中间段平均 z 低于此值 → 断线（BROKEN）；\n末段低于此值 → 第二焊点异常（BOND2）。中段发虚的线要调低。',
+ 'z_ball': '第一焊点球斑暗度得分：球心内圈（r≤1.5px）均值 vs 外环（r3~5px）背景中位数，按环噪声归一。\n球斑明显 4~8；弱球 1.7~2.3；无球 ≈0~0.5。低于此值 → 第一焊点异常（BOND1）。',
+ 'max_angle_deg': '单元相对模板允许的最大旋转角（±°）。\n0 = 只找正放的单元（最快最稳）；180 = 任意方向（每个单元单独找角度，慢）。\n摆放有歪的料给 5~15°。',
+ 'align_search_px': '每个单元分 2×2 块在此半径（px）内重新模板匹配，拟合局部仿射，\n修正单元间扭曲/缩放/位置偏差。0 = 不做局部校正。',
+ 'n_seg': '每根线均分的段数：首尾段用于焊点判定，中段用于断线判定。\n调大 → 断点定位更细，但单段采样点少、噪声大。常用 3~10。',
+}
 
 
 class ProductDialog(QDialog):
@@ -97,28 +110,34 @@ class ProductDialog(QDialog):
 
         g = QGroupBox('3. 产品参数')
         form = QFormLayout(g)
+
+        def row(label, w, tip=''):
+            if tip:
+                w.setToolTip(tip)
+            lab = QLabel(label)
+            lab.setToolTip(tip or w.toolTip())
+            form.addRow(lab, w)
+
         self.name = QLineEdit()
-        form.addRow('名称', self.name)
+        row('名称', self.name, '产品名 = products/<名称>/ 目录名，检测时在产品下拉中选择；\n改成新名字会另存为新目录（原产品保留）。')
         self.polarity = QComboBox()
         self.polarity.addItem('导线偏暗', 'dark')
         self.polarity.addItem('导线偏亮', 'bright')
-        form.addRow('极性', self.polarity)
+        row('极性', self.polarity, '导线在 X 光下比背景暗还是亮（管脚/焊盘通常暗，线常更暗或更亮）。\n选错 → z 值全为负 → 每根线都报缺线。')
         self.spins = {}
         for key, label, lo, hi, step, dec in NUMBERS:
             s = QDoubleSpinBox(decimals=dec, minimum=lo, maximum=hi, singleStep=step)
-            s.setToolTip(TIPS.get(key, ''))
             self.spins[key] = s
-            form.addRow(label, s)
+            row(label, s, TIPS.get(key, ''))
         self.n_seg = QSpinBox(minimum=3, maximum=20)
-        form.addRow('分段数', self.n_seg)
+        row('分段数', self.n_seg, TIPS['n_seg'])
         self.local_align = QCheckBox('每个单元做局部扭曲校正')
-        self.local_align.setToolTip(TIPS['align_search_px'])
-        form.addRow('局部校正', self.local_align)
+        row('局部校正', self.local_align,
+            '勾选 = 每单元做 2×2 块局部仿射校正（配合上面的搜索半径）；\n不勾 = 全部单元共用一次全局匹配，单元间位置/旋转差异大时会误报。')
         self.allow_mirror = QCheckBox('也找镜像单元（零件翻面放）')
-        self.allow_mirror.setToolTip('零件翻面后 X 光图是镜像；勾选后同时用镜像模板找单元')
-        form.addRow('镜像', self.allow_mirror)
+        row('镜像', self.allow_mirror, '零件翻面后 X 光图是镜像；勾选后同时用镜像模板找单元。')
         self.note = QLineEdit()
-        form.addRow('备注', self.note)
+        row('备注', self.note, '自由备注，只存在 product.json 里存档，检测不用。')
         rv.addWidget(g)
 
         row = QHBoxLayout()

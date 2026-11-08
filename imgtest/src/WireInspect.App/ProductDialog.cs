@@ -86,21 +86,38 @@ public sealed class ProductDialog : Window
     Control Build()
     {
         Control Section(string title) => new TextBlock { Text = title, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 10, 0, 2) };
-        Grid Form(params (string label, Control field)[] rows)
+        Grid Form(params (string label, Control field, string? tip)[] rows)
         {
             var g = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("150,*"), RowSpacing = 4 };
             for (int i = 0; i < rows.Length; i++)
             {
                 g.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-                g.Children.Add(new TextBlock { Text = rows[i].label, VerticalAlignment = VerticalAlignment.Center, [Grid.RowProperty] = i });
+                var lab = new TextBlock { Text = rows[i].label, VerticalAlignment = VerticalAlignment.Center, [Grid.RowProperty] = i };
+                if (rows[i].tip is { } tip)
+                {
+                    ToolTip.SetTip(lab, tip);
+                    ToolTip.SetTip(rows[i].field, tip);
+                }
+                g.Children.Add(lab);
                 rows[i].field[Grid.RowProperty] = i;
                 rows[i].field[Grid.ColumnProperty] = 1;
                 g.Children.Add(rows[i].field);
             }
             return g;
         }
-        ToolTip.SetTip(_maxAngle, "单元相对模板最多转多少度：180 = 任意方向（每个单元各自找角度），0 = 只找正放的单元（最快）");
-        ToolTip.SetTip(_alignSearch, "每个单元分 2×2 块在这个范围内重新匹配，拟合仿射，修正局部扭曲 / 缩放");
+        const string T_MATCH = "单元模板匹配分（0~1）及格线：低于此分的图像区域不认作单元。\n调低 → 位置偏/变形大的单元也能找到，但误检增多；\n调高 → 只收高度相似的单元，可能漏检。常用 0.5~0.8。";
+        const string T_WIDTH = "预计的导线直径（px），用于沿线逐列采样脊线强度，≈实际线径。\n设大 → 相邻导线/边缘干扰计入，z 虚高；\n设小 → 采不到线芯，z 偏低 → 误报断线/缺线。";
+        const string T_CORR = "以“焊点1→焊点2”连线为中心、允许导线摆动的半宽（px），须盖住最大线弧。\n太小 → 弧度大的线被截断，误报断线；\n太大 → 相邻导线干扰、速度慢。";
+        const string T_ENDTOL = "线头/线尾允许多少 px 无响应而不报焊点异常（BOND1/BOND2）。\n须盖住导线在焊球下消失的距离；\n太大 → 真从根部断开的线会漏检。";
+        const string T_GAP = "中段允许的最长无响应段（px），超过报断线（BROKEN）。\n影像中段发虚的线要调大；太大 → 真断线漏检。";
+        const string T_SHIFT = "拟合出的线端点与标定焊点的垂直偏移上限（px），超过报焊点偏移（SHIFT）。\n反映线歪/键合偏；正常散布大的产品要放宽。";
+        const string T_SWEEP = "导线最大拱高 ÷ 线长（%）。超过报线弧异常（SWEEP）。";
+        const string T_ZMISS = "整根线的平均信号强度 z（相对走廊背景噪声，按长度归一）。\n正常线 10~16；发虚线 3~6；无线 ≈0。\nz 低于此值 → 缺线（MISSING）。";
+        const string T_ZSEG = "线按分段数均分，任一中间段平均 z 低于此值 → 断线（BROKEN）；\n末段低于此值 → 第二焊点异常（BOND2）。中段发虚的线要调低。";
+        const string T_ZBALL = "第一焊点球斑暗度得分：球心内圈（r≤1.5px）均值 vs 外环（r3~5px）背景中位数，按环噪声归一。\n球斑明显 4~8；弱球 1.7~2.3；无球 ≈0~0.5。低于此值 → 第一焊点异常（BOND1）。";
+        const string T_ANGLE = "单元相对模板允许的最大旋转角（±°）。\n0 = 只找正放的单元（最快最稳）；180 = 任意方向（每个单元单独找角度，慢）。\n摆放有歪的料给 5~15°。";
+        const string T_ALIGN = "每个单元分 2×2 块在此半径（px）内重新模板匹配，拟合局部仿射，\n修正单元间扭曲/缩放/位置偏差。0 = 不做局部校正。";
+        ToolTip.SetTip(_localAlign, "勾选 = 每单元做 2×2 块局部仿射校正（配合上面的搜索半径）；\n不勾 = 全部单元共用一次全局匹配，单元间位置/旋转差异大时会误报。");
         ToolTip.SetTip(_allowMirror, "零件翻面后 X 光图是镜像；勾选后同时用镜像模板找单元");
         foreach (var b in new Control[] { _btnBox, _btnAuto, _btnAdd, _btnDel, _btnRev })
         {
@@ -114,15 +131,15 @@ public sealed class ProductDialog : Window
             Margin = new Thickness(10), Spacing = 4,
             Children =
             {
-                Form(("产品名称", _name)),
+                Form(("产品名称", _name, "产品名 = products/<名称>/ 目录名，检测时在产品下拉中选择；\n改成新名字会另存为新目录（原产品保留）。")),
                 Section("单元模板"), _btnBox, _tplInfo,
                 Section("导线（模板坐标，焊点1 → 焊点2）"), _btnAuto, _list, wireButtons,
                 Section("阈值（长度单位：像素）"),
-                Form(("线宽", _wireWidth), ("走廊半宽", _corridor), ("端点缺口容差", _endTol), ("中段断线缺口", _gapMax),
-                     ("端点偏移上限", _shiftMax), ("sweep 上限 %", _sweepMax), ("缺线 z", _zMissing), ("分段 z（断线）", _zSeg),
-                     ("焊点 z", _zBall), ("模板匹配阈值", _matchThr), ("极性", _polarity)),
+                Form(("线宽", _wireWidth, T_WIDTH), ("走廊半宽", _corridor, T_CORR), ("端点缺口容差", _endTol, T_ENDTOL), ("中段断线缺口", _gapMax, T_GAP),
+                     ("端点偏移上限", _shiftMax, T_SHIFT), ("sweep 上限 %", _sweepMax, T_SWEEP), ("缺线 z", _zMissing, T_ZMISS), ("分段 z（断线）", _zSeg, T_ZSEG),
+                     ("焊点 z", _zBall, T_ZBALL), ("模板匹配阈值", _matchThr, T_MATCH), ("极性", _polarity, "导线在 X 光下比背景暗还是亮（管脚/焊盘通常暗，线常更暗或更亮）。\n选错 → z 值全为负 → 每根线都报缺线。")),
                 Section("旋转 / 扭曲校正"),
-                Form(("单元旋转范围 ±°", _maxAngle), ("局部校正搜索 px", _alignSearch), ("局部校正", _localAlign), ("镜像", _allowMirror)),
+                Form(("单元旋转范围 ±°", _maxAngle, T_ANGLE), ("局部校正搜索 px", _alignSearch, T_ALIGN), ("局部校正", _localAlign, null), ("镜像", _allowMirror, null)),
                 Section("预览"), _btnPreview, _previewInfo,
             },
         };
