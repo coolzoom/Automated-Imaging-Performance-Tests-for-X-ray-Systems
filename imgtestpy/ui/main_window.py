@@ -535,7 +535,7 @@ class MainWindow(QMainWindow):
         self.product.template = None
         self.product = None
         shutil.rmtree(pdir)
-        self._fill_products()
+        self._fill_products('')
         self.statusBar().showMessage('产品已删除', 5000)
 
     # ------------------------------------------------------------------ folder / tree
