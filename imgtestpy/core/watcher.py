@@ -10,7 +10,7 @@ import datetime
 import os
 import time
 
-from .session import scan
+from .scanner import scan
 
 MAX_RETRIES = 3
 

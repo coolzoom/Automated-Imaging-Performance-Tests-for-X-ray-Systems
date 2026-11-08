@@ -28,6 +28,7 @@ _TOOL = {
            '<path d="M10 10.5v7M14 10.5v7" stroke="#e02424"/>',
     'gear': '<circle cx="12" cy="12" r="3.2" stroke="{c}"/>'
             '<path d="M12 3v2.8M12 18.2V21M3 12h2.8M18.2 12H21M5.6 5.6l2 2M16.4 16.4l2 2M18.4 5.6l-2 2M7.6 16.4l-2 2" stroke="{c}"/>',
+    'watch': '<circle cx="12" cy="12" r="8.5" stroke="{c}"/><path d="M12 7v5l3.5 2" stroke="#31b8ff"/>',
 }
 
 APP_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">

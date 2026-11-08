@@ -49,10 +49,14 @@ public sealed partial class MainWindow : Window
     readonly Dictionary<string, Bitmap> _thumbCache = [];
     string? _thumbFolder;
     CancellationTokenSource? _thumbCts, _detectCts;
-    bool _running, _loadingProducts;
+    bool _running, _loadingProducts, _watching;
+    FolderWatcher? _watcher;
+    readonly List<string> _watchQueue = [];
+    readonly DispatcherTimer _watchTimer = new();
 
     // controls
     readonly Button _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnNewProduct, _btnEditProduct, _btnDelProduct, _btnSettings, _btnMcp;
+    readonly ToggleButton _btnWatch;
     readonly ComboBox _productCombo = new() { MinWidth = 150 };
     readonly CheckBox _chkFollow = new() { Content = "自动显示最新", IsChecked = true };
     readonly TextBox _operator = new();
@@ -105,6 +109,7 @@ public sealed partial class MainWindow : Window
         _btnDelProduct = Icons.ToolButton("del", "删除", "删除当前选中产品的模板与配置（不可恢复）");
         _btnSettings = Icons.ToolButton("gear", "设置", "运行参数（并行线程数）");
         _btnMcp = Icons.ToolButton("mcp", "MCP / AI", "MCP 服务与 AI Agent 一键配置");
+        _btnWatch = Icons.ToolToggle("watch", "实时监控", "监控当前文件夹：X光软件保存新图片后自动检测并提示结果");
         Content = Build();
         Wire();
         LoadProducts(_cfg.Product);
@@ -148,7 +153,7 @@ public sealed partial class MainWindow : Window
         productRow.Children.Add(productButtons);
         productRow.Children.Add(productLabel);
         var side = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 0, 6) };
-        foreach (var c in new Control[] { logo, Pair(_btnOpen, _btnRecent, _btnReport), Sep(), Pair(_btnStart, _btnStop, _btnRerun), Sep(), Pair(_btnSettings, _btnMcp), Sep(),
+        foreach (var c in new Control[] { logo, Pair(_btnOpen, _btnRecent, _btnReport), Sep(), Pair(_btnStart, _btnStop, _btnRerun), Sep(), Pair(_btnSettings, _btnMcp, _btnWatch), Sep(),
                      productRow, _productCombo, Sep(), Label("操作员"), _operator })
         {
             c.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -156,6 +161,7 @@ public sealed partial class MainWindow : Window
         }
         foreach (var b in new Button[] { _btnOpen, _btnRecent, _btnStart, _btnStop, _btnRerun, _btnClear, _btnReport, _btnSettings, _btnMcp, _btnNewProduct, _btnEditProduct })
             b.HorizontalContentAlignment = HorizontalAlignment.Left;
+        _btnWatch.HorizontalContentAlignment = HorizontalAlignment.Left;
         _operator.Text = _cfg.Operator;
 
         foreach (var (name, _) in Filters) _filter.Items.Add(name);
@@ -317,6 +323,8 @@ public sealed partial class MainWindow : Window
         _btnDelProduct.Click += async (_, _) => await DeleteProduct();
         _btnSettings.Click += async (_, _) => await OpenSettings();
         _btnMcp.Click += async (_, _) => await new McpDialog(this).ShowDialog(this);
+        _btnWatch.IsCheckedChanged += (_, _) => ToggleWatch();
+        _watchTimer.Tick += (_, _) => WatchTick();
         _btnLicense.Click += async (_, _) => await ChangeLicense();
         _productCombo.SelectionChanged += (_, _) => { if (!_loadingProducts) SelectProduct(_productCombo.SelectedItem as string); };
         _operator.LostFocus += (_, _) =>
@@ -357,6 +365,7 @@ public sealed partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
         Closing += (_, _) =>
         {
+            _watchTimer.Stop();
             _detectCts?.Cancel();
             StopMcp();
             _session?.Save();
@@ -412,12 +421,14 @@ public sealed partial class MainWindow : Window
     void UpdateEnabled()
     {
         bool has = _session != null, img = has && _current != null;
-        _btnStart.IsEnabled = _btnRerun.IsEnabled = has && !_running && _product != null;
+        _btnStart.IsEnabled = _btnRerun.IsEnabled = has && !_running && !_watching && _product != null;
         _btnStop.IsEnabled = _running;
-        _btnReport.IsEnabled = _btnClear.IsEnabled = has && !_running;
-        _btnOpen.IsEnabled = _btnRecent.IsEnabled = !_running;
-        _productCombo.IsEnabled = _btnNewProduct.IsEnabled = !_running;
-        _btnEditProduct.IsEnabled = _btnDelProduct.IsEnabled = !_running && _product != null;
+        _btnReport.IsEnabled = _btnClear.IsEnabled = has && !_running && !_watching;
+        _btnOpen.IsEnabled = _btnRecent.IsEnabled = !_running && !_watching;
+        _btnSettings.IsEnabled = !_watching;
+        _btnWatch.IsEnabled = has;
+        _productCombo.IsEnabled = _btnNewProduct.IsEnabled = !_running && !_watching;
+        _btnEditProduct.IsEnabled = _btnDelProduct.IsEnabled = !_running && !_watching && _product != null;
         foreach (var c in new Control[] { _btnPass, _btnFail, _btnClearVerdict, _btnAccept, _btnReject, _btnDelete, _btnType, _btnDraw, _comment })
             c.IsEnabled = img;
     }
@@ -559,6 +570,7 @@ public sealed partial class MainWindow : Window
     public async Task OpenFolderAsync(string path)
     {
         if (_running) return;
+        _btnWatch.IsChecked = false;   // 停止旧文件夹的监控（未开时无效果）
         _session?.Save();
         _session = new Session(path) { };
         if (!string.IsNullOrEmpty(_operator.Text)) _session.Data.Operator = _operator.Text;
@@ -1054,7 +1066,7 @@ public sealed partial class MainWindow : Window
     // ------------------------------------------------------------------ detection
     public async Task StartDetection(bool rerunAll)
     {
-        if (_session == null || _running) return;
+        if (_session == null || _running || _watching) return;
         if (_product == null)
         {
             await Dialogs.Info(this, "提示", "请先在工具栏选择产品，或点“新建产品”。");
@@ -1133,6 +1145,145 @@ public sealed partial class MainWindow : Window
         if (k % 5 == 0 || k == total) UpdateCounts();
         if (_chkFollow.IsChecked == true && rel != _current) SelectRel(rel);
         else if (rel == _current) RefreshDefects();
+    }
+
+    // ------------------------------------------------------------------ live folder watching
+    void ToggleWatch()
+    {
+        var on = _btnWatch.IsChecked == true;
+        if (on && (_session == null || _running || _product == null))
+        {
+            _btnWatch.IsChecked = false;
+            _ = Dialogs.Info(this, "提示", "请先导入要监控的文件夹、选好产品，并等待当前检测完成。");
+            return;
+        }
+        _watching = on;
+        if (on)
+        {
+            _watcher = new FolderWatcher(_session!, _cfg.WatchSettle);
+            _watchQueue.Clear();
+            _watchTimer.Interval = TimeSpan.FromSeconds(Math.Max(0.5, _cfg.WatchInterval));
+            _watchTimer.Start();
+            ShowBanner("实时监控中：等待 X 光软件保存新图片…", "#555");
+            WatchTick();
+        }
+        else
+        {
+            _watchTimer.Stop();
+            _detectCts?.Cancel();
+            _watcher = null;
+            _watchQueue.Clear();
+            ShowBanner(null);
+            _session?.Save();
+        }
+        UpdateEnabled();
+    }
+
+    void WatchTick()
+    {
+        if (_watcher == null || _session == null) return;
+        var fresh = _watcher.Poll();
+        if (fresh.Count == 0) return;
+        var added = fresh.Where(r => !_dots.ContainsKey(r)).ToList();
+        if (added.Count > 0)
+        {
+            var cur = _current;
+            _session.Files.AddRange(added);
+            BuildTree();
+            if (cur != null) SelectRel(cur);
+            UpdateCounts();
+        }
+        _watchQueue.AddRange(fresh);
+        WatchRun();
+    }
+
+    void WatchRun()
+    {
+        if (_watcher == null || _watchQueue.Count == 0 || _running) return;
+        var rels = _watchQueue.ToList();
+        _watchQueue.Clear();
+        ShowBanner($"检测中：{rels[0][(rels[0].LastIndexOf('/') + 1)..]}" +
+                   (rels.Count > 1 ? $"（另有 {rels.Count - 1} 张排队）" : ""), "#1f6fd1");
+        _ = RunWatchBatch(rels);
+    }
+
+    async Task RunWatchBatch(List<string> rels)
+    {
+        var s = _session!;
+        var product = _product!;
+        _running = true;
+        _detectCts = new CancellationTokenSource();
+        var token = _detectCts.Token;
+        UpdateEnabled();
+        try
+        {
+            await Task.Run(() =>
+            {
+                foreach (var rel in rels)
+                {
+                    token.ThrowIfCancellationRequested();
+                    Dispatcher.UIThread.Post(() => { _busy.Add(rel); UpdateItem(rel); });
+                    ImageResult? res = null;
+                    string? err = null;
+                    try
+                    {
+                        using var g = ImageIO.ReadGray(Path.Combine(s.Root, rel));
+                        res = Inspector.Detect(g, product);
+                    }
+                    catch (Exception e) { err = $"{e.GetType().Name}: {e.Message}"; }
+                    Dispatcher.UIThread.Post(() => OnWatchResult(rel, res, err));
+                }
+            }, token);
+        }
+        catch (OperationCanceledException) { }
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        _busy.Clear();
+        _running = false;
+        s.Save();
+        UpdateCounts();
+        UpdateEnabled();
+        WatchRun();   // pick up anything queued while this batch ran
+    }
+
+    void OnWatchResult(string rel, ImageResult? res, string? err)
+    {
+        _busy.Remove(rel);
+        if (_session == null) return;
+        if (_watcher == null || (err != null && _watcher.Failed(rel)))
+        {
+            UpdateItem(rel);   // stopped, or probably still being written (picked up again by a later poll)
+            return;
+        }
+        _watcher.Done(rel);
+        if (res != null) _session.SetDetection(rel, res);
+        else _session.SetError(rel, err ?? "未知错误");
+        UpdateItem(rel);
+        var defects = _session.LiveDefects(rel);
+        var name = rel[(rel.LastIndexOf('/') + 1)..];
+        string verdict;
+        if (err != null)
+        {
+            verdict = "ERROR";
+            ShowBanner($"无法检测：{name}（{(err.Length > 60 ? err[..60] : err)}）", "#8a6d00");
+        }
+        else if (defects.Count > 0)
+        {
+            verdict = "NG";
+            var types = string.Join('、', defects.Select(d => d.Type).Distinct().OrderBy(t => t, StringComparer.Ordinal));
+            ShowBanner($"NG  {name}：{defects.Count} 处疑似缺陷（{types}），请复核", "#e02424");
+            try { Console.Beep(); } catch (Exception) { }
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Activate();
+        }
+        else
+        {
+            verdict = "OK";
+            ShowBanner($"OK  {name}：未检出缺陷", "#18a848");
+        }
+        FolderWatcher.LogResult(_session, rel, verdict, defects, _product?.Name ?? "");
+        if (_chkFollow.IsChecked == true && rel != _current) SelectRel(rel);
+        else if (rel == _current) RefreshDefects();
+        UpdateCounts();
     }
 
     // ------------------------------------------------------------------ clear / report / export

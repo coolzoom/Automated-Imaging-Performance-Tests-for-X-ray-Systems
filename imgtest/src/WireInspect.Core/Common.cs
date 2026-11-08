@@ -63,6 +63,8 @@ public sealed class AppConfig
     public string Operator { get; set; } = "";
     public string Product { get; set; } = "";
     public int Workers { get; set; }
+    public double WatchSettle { get; set; } = 1.0;
+    public double WatchInterval { get; set; } = 2.0;
     public int McpPort { get; set; } = 3918;
     public bool McpAutoStart { get; set; }
 

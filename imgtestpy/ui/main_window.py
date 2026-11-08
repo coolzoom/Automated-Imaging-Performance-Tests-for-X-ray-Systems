@@ -92,6 +92,9 @@ class MainWindow(QMainWindow):
         self.busy = set()           # images being detected right now (spinner in the tree)
         self.spin_frame = 0
         self.spin_timer = QTimer(self, interval=80, timeout=self._spin)
+        self.watcher = None         # FolderWatcher while 实时监控 is on
+        self.watch_queue = []
+        self.watch_timer = QTimer(self, timeout=self._watch_tick)
         self.setWindowTitle(APP_TITLE)
         self._build()
         self._shortcuts()
@@ -123,6 +126,8 @@ class MainWindow(QMainWindow):
         self.act_report.setToolTip('整个文件夹的检测与复核结果导出为交互式 HTML 报告（附 CSV 明细）')
         self.act_settings = QAction('设置', self, triggered=self.open_settings)
         self.act_settings.setToolTip('运行参数（并行线程数、自动显示最新）')
+        self.act_watch = QAction('实时监控', self, checkable=True, toggled=self._toggle_watch)
+        self.act_watch.setToolTip('监控当前文件夹：X光软件保存新图片后自动检测并提示结果')
         self.act_new_product = QAction('新建', self, triggered=lambda: self.edit_product(True))
         self.act_new_product.setToolTip('在当前图片上框选一个单元，自动找线，生成产品配置')
         self.act_edit_product = QAction('编辑', self, triggered=lambda: self.edit_product(False))
@@ -131,9 +136,9 @@ class MainWindow(QMainWindow):
         for a, name in ((self.act_open, 'open'), (self.act_recent, 'recent'), (self.act_start, 'start'),
                         (self.act_stop, 'stop'), (self.act_rerun, 'rerun'), (self.act_clear, 'clear'),
                         (self.act_report, 'report'), (self.act_new_product, 'add'), (self.act_edit_product, 'edit'),
-                        (self.act_del_product, 'del'), (self.act_settings, 'gear')):
+                        (self.act_del_product, 'del'), (self.act_settings, 'gear'), (self.act_watch, 'watch')):
             a.setIcon(tool_icon(name))
-        for a in (self.act_start, self.act_rerun, self.act_stop, self.act_report, self.act_clear):
+        for a in (self.act_start, self.act_rerun, self.act_stop, self.act_report, self.act_clear, self.act_watch):
             a.setEnabled(False)
 
         # left: sidebar (logo, button rows, product, operator) + filter + tree + legend — same as the C# layout
@@ -177,7 +182,7 @@ class MainWindow(QMainWindow):
         lv.addWidget(sep())
         lv.addLayout(pair(tbtn(self.act_start), tbtn(self.act_stop), tbtn(self.act_rerun)))
         lv.addWidget(sep())
-        lv.addLayout(pair(tbtn(self.act_settings)))
+        lv.addLayout(pair(tbtn(self.act_settings), tbtn(self.act_watch)))
         lv.addWidget(sep())
         prod = QHBoxLayout()
         prod.setContentsMargins(2, 5, 0, 2)
@@ -544,6 +549,7 @@ class MainWindow(QMainWindow):
             path = QFileDialog.getExistingDirectory(self, '选择图片文件夹')
         if not path:
             return
+        self.act_watch.setChecked(False)
         self._stop_and_wait()
         if self.session and self.session.dirty:
             self.session.save()
@@ -559,7 +565,7 @@ class MainWindow(QMainWindow):
         self._thumb_folder = None
         self.current = None
         self._build_tree()
-        for a in (self.act_start, self.act_rerun, self.act_report, self.act_clear):
+        for a in (self.act_start, self.act_rerun, self.act_report, self.act_clear, self.act_watch):
             a.setEnabled(True)
         self.setWindowTitle('%s - %s' % (APP_TITLE, path))
         self._update_counts()
@@ -1125,6 +1131,99 @@ class MainWindow(QMainWindow):
             self.worker.stop()
             self.worker.wait()
             QApplication.processEvents()
+
+    # ------------------------------------------------------------------ live folder watching
+    def _toggle_watch(self, on):
+        if on and (not self.session or self._busy() or self.product is None):
+            QMessageBox.information(self, '提示', '请先导入要监控的文件夹、选好产品，并等待当前检测完成。')
+            self.act_watch.setChecked(False)
+            return
+        for a in (self.act_open, self.act_start, self.act_rerun, self.act_settings, self.act_recent, self.act_clear):
+            a.setEnabled(not on)
+        if on:
+            from core.watcher import FolderWatcher
+            self.watcher = FolderWatcher(self.session, float(self.cfg.get('watch_settle', 1.0)))
+            self.watch_queue = []
+            self.watch_timer.start(int(float(self.cfg.get('watch_interval', 2.0)) * 1000))
+            self._banner('实时监控中：等待 X 光软件保存新图片…', '#555')
+            self._watch_tick()
+        else:
+            self.watch_timer.stop()
+            self._stop_and_wait()
+            self.watcher = None
+            self.banner.setVisible(False)
+            if self.session:
+                self.session.save()
+
+    def _watch_tick(self):
+        if not self.watcher:
+            return
+        new = self.watcher.poll()
+        if not new:
+            return
+        added = [r for r in new if r not in self.tree_items]
+        if added:
+            self.session.files.extend(r for r in added if r not in self.session.files)
+            cur = self.current
+            self._build_tree()
+            self.current = cur
+            if cur:
+                it = self.tree_items.get(cur)
+                if it:
+                    self.tree.setCurrentItem(it)
+            self._update_counts()
+        self.watch_queue.extend(new)
+        self._watch_run()
+
+    def _watch_run(self):
+        if not self.watch_queue or self._busy():
+            return
+        rels, self.watch_queue = self.watch_queue, []
+        self.worker = BatchWorker(self.session.root, rels, self.product.dir, 1, self)
+        self.worker.started.connect(self._on_started)
+        self.worker.result.connect(self._on_watch_result)
+        self.worker.done.connect(self._on_watch_done)
+        self._banner('检测中：%s%s' % (rels[0].rsplit('/', 1)[-1], '（另有 %d 张排队）' % (len(rels) - 1)
+                                       if len(rels) > 1 else ''), '#1f6fd1')
+        self.worker.start()
+
+    def _on_watch_result(self, rel, res):
+        if not self.watcher or ('error' in res and self.watcher.failed(rel)):
+            # stopped, or probably still being written (picked up again by a later poll)
+            self.busy.discard(rel)
+            self._update_item(rel)
+            return
+        self.watcher.done(rel)
+        self._on_result(rel, res)
+        defects = self.session.live_defects(rel)
+        name = rel.rsplit('/', 1)[-1]
+        if 'error' in res:
+            verdict = 'ERROR'
+            self._banner('无法检测：%s（%s）' % (name, res['error'][:60]), '#8a6d00')
+        elif defects:
+            verdict = 'NG'
+            types = '、'.join(sorted({d.type for d in defects}))
+            self._banner('NG  %s：%d 处疑似缺陷（%s），请复核' % (name, len(defects), types), '#e02424')
+            QApplication.beep()
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+        else:
+            verdict = 'OK'
+            self._banner('OK  %s：未检出缺陷' % name, '#18a848')
+        from core.watcher import log_result
+        log_result(self.session, rel, verdict, defects, self.product.name if self.product else '')
+        self._update_counts()
+
+    def _on_watch_done(self, _finished):
+        busy, self.busy = self.busy, set()
+        self.spin_timer.stop()
+        for rel in busy:
+            self._update_item(rel)
+        if self.session:
+            self.session.save()
+        self._update_counts()
+        self._watch_run()   # pick up anything queued while this batch ran
 
     # ------------------------------------------------------------------ outputs
     def _update_counts(self):

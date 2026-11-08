@@ -27,7 +27,7 @@ C# Avalonia 版（`../imgtest`）功能等价重写，跑在 Win7 SP1 x64 / Win1
 
 ## 目录
 
-- `core/` 纯算法（无 Qt）：inspect/align/autowires/product/session/report/imgio + license/ed25519
+- `core/` 纯算法（无 Qt）：inspect/align/autowires/product/session/report/imgio + license/ed25519 + watcher（实时监控）
 - `ui/` PySide2 界面：main_window、product_dialog、license_dialog、viewer、icons、theme
 - `tools/` make_license.py（CLI 签发）、license_tool.py（GUI 注册机）
 - `products/<名>/` tpl.png + product.json（与 C# 版互换使用）
@@ -45,6 +45,12 @@ C# Avalonia 版（`../imgtest`）功能等价重写，跑在 Win7 SP1 x64 / Win1
 
 - `product.json: scale_range`（默认 `[0.9,1.4]`，`[1,1]` 关闭）：正常匹配 0 单元时在区间内扫缩放，命中后用缩放模板重跑，像素参数随缩放调整（`core/inspect.py: best_scale/_scale_px`）。
 - 其余参数见 `core/product.py: Product` 注释。
+
+## 实时监控
+
+- `core/watcher.py`：轮询式热文件夹（不用 OS 事件，网络盘不可靠）。文件需「两次轮询 size+mtime 不变 + 闲置 ≥ watch_settle 秒 + JPEG `FF D9` / PNG `IEND` 尾标记」才交给检测，绝不读半成品；原图只读不动。已检过的（session.json）跳过，重启不重复检。
+- `ui/main_window.py`：侧栏「实时监控」开关 → `_toggle_watch/_watch_tick/_watch_run`；发现新图自动进树并逐张检测（workers=1），横幅报 OK/NG/ERROR，NG 响铃+弹窗；结果追加 `<文件夹>/.xray_wire/watch_log.csv`。
+- 监控中禁用 打开/最近/开始/重检/设置/清除/产品 等按钮；`config.json` 键 `watch_settle`（默认 1.0s）、`watch_interval`（默认 2.0s）与 C# 版共用。
 
 ## 注意
 

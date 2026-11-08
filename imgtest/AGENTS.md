@@ -13,6 +13,10 @@
 - `tests/WireInspect.Tests` — synthetic-image unit tests; `tests/WireInspect.UiTests` — Avalonia.Headless smoke test,
   writes `out/ui_main.png`, `out/ui_product.png` (needs `/Users/mac/Downloads/2026-11-03-13-56-22/2_8_4.jpg`, else no-op).
 - `products/<name>/tpl.png + product.json` — product library; `config.json` (git-ignored) — recent folders, operator, product.
+- 实时监控（`WireInspect.Core/FolderWatcher` + sidebar 实时监控 toggle）：polls the open folder every `watch_interval`
+  (2s); a file is inspected only after size+mtime are stable for `watch_settle` (1s) and its JPEG `FF D9` / PNG `IEND`
+  end marker is present. Results show as OK/NG/ERROR banner (NG also beeps + raises the window) and append to
+  `<folder>/.xray_wire/watch_log.csv`. Same keys in the Python version (`core/watcher.py`).
 - `wire_inspect.py` — original Python prototype, kept for numeric comparison (`.venv/bin/python wire_inspect.py <img>`).
 - `py/` — separate Python/PySide6 variant, not part of the .NET build; do not touch from .NET work.
 

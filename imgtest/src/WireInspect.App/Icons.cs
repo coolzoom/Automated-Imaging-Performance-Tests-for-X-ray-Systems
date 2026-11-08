@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -37,6 +38,7 @@ public static class Icons
                     new P("M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2")],
         ["mcp"] = [new C(6, 6, 3), new C(18, 12, 3), new C(6, 18, 3),
                    new P("M8.5 7.3 15.3 10.8M8.5 16.7 15.3 13.2")],
+        ["watch"] = [new C(12, 12, 8.5), new P("M12 7v5l3.5 2", null, "#31b8ff")],
     };
 
     public static Control Get(string name, double size = 18)
@@ -75,6 +77,34 @@ public static class Icons
         };
         // keep the flat look when disabled: the Fluent :disabled state paints the template presenter grey
         b.Styles.Add(new Avalonia.Styling.Style(x => x.OfType<Button>().Class(":disabled").Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>())
+        {
+            Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brushes.Transparent) },
+        });
+        if (tip != null) ToolTip.SetTip(b, tip);
+        return b;
+    }
+
+    /// <summary>Same look as <see cref="ToolButton"/> but stays pressed while checked (实时监控).</summary>
+    public static ToggleButton ToolToggle(string icon, string text, string? tip = null)
+    {
+        var b = new ToggleButton
+        {
+            Content = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4,
+                Children = { Get(icon, 15), new TextBlock { Text = text, FontSize = 13, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center } },
+            },
+            Padding = new Thickness(4, 4), Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+        };
+        b.Styles.Add(new Avalonia.Styling.Style(x => x.OfType<ToggleButton>().Class(":checked"))
+        {
+            Setters =
+            {
+                new Avalonia.Styling.Setter(ToggleButton.BackgroundProperty, Brush.Parse("#1f6fd1")),
+                new Avalonia.Styling.Setter(ToggleButton.CornerRadiusProperty, new CornerRadius(4)),
+            },
+        });
+        b.Styles.Add(new Avalonia.Styling.Style(x => x.OfType<ToggleButton>().Class(":disabled").Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>())
         {
             Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brushes.Transparent) },
         });
