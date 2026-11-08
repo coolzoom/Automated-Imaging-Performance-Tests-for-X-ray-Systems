@@ -105,6 +105,8 @@ echo    输出: dist\WireInspectLicense\WireInspectLicense.exe
 exit /b 0
 
 :pack_done
+if exist "redist" copy /Y "redist\*.*" "dist\" >nul
 echo.
 echo 打包完成。产物在 dist\ 下，整个文件夹拷到目标机即可运行（支持 Win7 SP1 x64）。
+echo Win7 客户需先安装 dist\Windows6.1-KB2999226-x64.msu（见 dist\README.txt）。
 pause & goto menu
