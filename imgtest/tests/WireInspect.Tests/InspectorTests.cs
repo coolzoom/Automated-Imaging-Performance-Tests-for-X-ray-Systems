@@ -1,4 +1,3 @@
-using OpenCvSharp;
 using WireInspect.Core;
 using static WireInspect.Tests.Synthetic;
 
@@ -232,36 +231,5 @@ public class InspectorTests
             Assert.InRange(Math.Abs(w.P2[0] - truth.P2[0]), 0, 8);
             Assert.InRange(Math.Abs(w.P2[1] - truth.P2[1]), 0, 3);
         }
-    }
-
-    [Fact]
-    public void SlopeWire_IsMeasured_AndStepIsNot()
-    {
-        var a = new Product { WireWidthPx = 2.5, CorridorPx = 7, EndTolPx = 30, GapMaxPx = 40, ZBall = 0 }.Params();
-        var wire = Inspector.InspectWire(Ramp(false), new Point2d(12, 24), new Point2d(77, 24), a);
-        var edge = Inspector.InspectWire(Ramp(true), new Point2d(12, 24), new Point2d(77, 24), a);
-        Assert.DoesNotContain("MISSING", wire.Flags);
-        Assert.Contains("MISSING", edge.Flags);
-    }
-
-    static FImage Ramp(bool step)
-    {
-        const int h = 48, w = 90, y0 = 24;
-        var img = new FImage(w, h);
-        var rnd = new Random(1);
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-            {
-                double v = step ? (y >= y0 ? 190 : 70) : 70 + 5.0 * (y - y0);
-                if (!step && x >= 12 && x < 78)
-                {
-                    int dy = y - y0;
-                    if (dy == 0) v -= 16;
-                    else if (Math.Abs(dy) == 1) v -= 7;
-                }
-                v += rnd.NextDouble() * 6 - 3;
-                img[y, x] = (float)v;
-            }
-        return img;
     }
 }

@@ -185,45 +185,19 @@ def _median(v):
     return float(np.median(v)) if v.size else 0.0
 
 
-def _wire_ridge(patch, d):
-    """Dark-line response along axis 0. A slope is removed when the slope estimates at
-    several distances agree. A lead edge makes them disagree, and the response then falls
-    back to the plain both-sides difference, which stays quiet on a step."""
-    ns, _ = patch.shape
-    rad = d + 2
-    ridge = np.zeros_like(patch)
-    n = ns - 2 * rad
-    if n <= 0:
-        return ridge
-
-    def at(k):
-        return patch[rad + k:rad + k + n]
-
-    slopes = np.stack([(at(k) - at(-k)) / (2.0 * k) for k in (d, d + 1, d + 2)], 0)
-    spread = slopes.max(0) - slopes.min(0)
-    b = np.median(slopes, 0)
-    center = at(0)
-    old = np.minimum(at(-d), at(d)) - center
-    corrected = np.minimum(at(-d) + b * d, at(d) - b * d) - center
-    # linear backgrounds stay under ~5 gray/px of disagreement; a step shoulder sits near 9
-    w = np.clip((8.0 - spread) / 4.0, 0.0, 1.0)
-    ridge[rad:ns - rad] = old + w * (corrected - old)
-    return ridge
-
-
 def inspect_wire(img, p1, p2, a):
     vx, vy = p2[0] - p1[0], p2[1] - p1[1]
     L = max(1.0, math.sqrt(vx * vx + vy * vy))
     ux, uy = vx / L, vy / L
     nx, ny = -uy, ux
-    rad = a.d + 2   # room for the slope samples outside the both-sides pair
-    W = a.half_w + a.bg_off + a.bg_w + rad
+    W = a.half_w + a.bg_off + a.bg_w + a.d
     nt = math.ceil(L + 2 * a.ext + 1 - 1e-9)
     t = -a.ext + np.arange(nt, dtype=np.float64)
     ns = 2 * W + 1
     s = (np.arange(ns) - W).astype(np.float64)[:, None]
     patch = img.sample(p1[0] + t * ux + s * nx, p1[1] + t * uy + s * ny)
-    ridge = _wire_ridge(patch, a.d)
+    ridge = np.zeros_like(patch)
+    ridge[a.d:ns - a.d] = np.minimum(patch[:ns - 2 * a.d], patch[2 * a.d:]) - patch[a.d:ns - a.d]
     R = _blur_rows(ridge, a.along)
 
     inside = (t >= 0) & (t <= L)

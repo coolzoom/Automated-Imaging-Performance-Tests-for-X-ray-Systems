@@ -320,8 +320,7 @@ public static class Inspector
         double vx = p2.X - p1.X, vy = p2.Y - p1.Y;
         double L = Math.Max(1.0, Math.Sqrt(vx * vx + vy * vy));
         double ux = vx / L, uy = vy / L, nx = -uy, ny = ux;
-        int rad = a.D + 2;   // room for the slope samples outside the both-sides pair
-        int W = a.HalfW + a.BgOff + a.BgW + rad;
+        int W = a.HalfW + a.BgOff + a.BgW + a.D;
         int nt = (int)Math.Ceiling(L + 2 * a.Ext + 1 - 1e-9);
         var t = new double[nt];
         for (int j = 0; j < nt; j++) t[j] = -a.Ext + j;
@@ -334,7 +333,10 @@ public static class Inspector
                 double s = i - W;
                 patch[i, j] = img.Sample(p1.X + t[j] * ux + s * nx, p1.Y + t[j] * uy + s * ny);
             }
-        var ridge = WireRidge(patch, a.D);
+        var ridge = new double[ns, nt];
+        for (int i = a.D; i < ns - a.D; i++)
+            for (int j = 0; j < nt; j++)
+                ridge[i, j] = Math.Min(patch[i - a.D, j], patch[i + a.D, j]) - patch[i, j];
         var R = BlurRows(ridge, a.Along);
 
         var inside = t.Select(v => v >= 0 && v <= L).ToArray();
@@ -470,40 +472,6 @@ public static class Inspector
     }
 
     // ---- small numeric helpers (numpy equivalents)
-
-    /// <summary>Dark-line response along axis 0. A slope is removed when the slope estimates at several
-    /// distances agree. A lead edge makes them disagree, and the response then falls back to the plain
-    /// both-sides difference, which stays quiet on a step.</summary>
-    static double[,] WireRidge(double[,] patch, int d)
-    {
-        int ns = patch.GetLength(0), nt = patch.GetLength(1), rad = d + 2;
-        var ridge = new double[ns, nt];
-        if (ns <= 2 * rad) return ridge;
-        for (int i = rad; i < ns - rad; i++)
-            for (int j = 0; j < nt; j++)
-            {
-                double b0 = (patch[i + d, j] - patch[i - d, j]) / (2.0 * d);
-                double b1 = (patch[i + d + 1, j] - patch[i - d - 1, j]) / (2.0 * (d + 1));
-                double b2 = (patch[i + d + 2, j] - patch[i - d - 2, j]) / (2.0 * (d + 2));
-                double hi = Math.Max(b0, Math.Max(b1, b2)), lo = Math.Min(b0, Math.Min(b1, b2));
-                double b = Med3(b0, b1, b2);
-                double old = Math.Min(patch[i - d, j], patch[i + d, j]) - patch[i, j];
-                double corrected = Math.Min(patch[i - d, j] + b * d, patch[i + d, j] - b * d) - patch[i, j];
-                // linear backgrounds stay under ~5 gray/px of disagreement; a step shoulder sits near 9
-                double w = Math.Clamp((8.0 - (hi - lo)) / 4.0, 0, 1);
-                ridge[i, j] = old + w * (corrected - old);
-            }
-        return ridge;
-    }
-
-    static double Med3(double a, double b, double c)
-    {
-        if (a > b) (a, b) = (b, a);
-        if (b > c) (b, c) = (c, b);
-        if (a > b) (a, b) = (b, a);
-        return b;
-    }
-
     static double[,] BlurRows(double[,] src, int k)
     {
         int rows = src.GetLength(0), cols = src.GetLength(1), h = k / 2;
