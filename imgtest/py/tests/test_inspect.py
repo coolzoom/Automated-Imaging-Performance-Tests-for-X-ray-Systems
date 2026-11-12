@@ -13,7 +13,7 @@ from core.autowires import auto_wires  # noqa: E402
 from core.config import MISSING  # noqa: E402
 from core.defect import Defect  # noqa: E402
 from core.imgio import read_gray, write_png  # noqa: E402
-from core.inspect import detect  # noqa: E402
+from core.inspect import detect, inspect_wire, prepare  # noqa: E402
 from core.product import Product, list_products  # noqa: E402
 from core.session import AUTO_OK, PASS, SUSPECT, UNCHECKED, Session  # noqa: E402
 import synthetic as syn  # noqa: E402
@@ -165,6 +165,23 @@ class InspectTests(unittest.TestCase):
             self.assertLessEqual(abs(w.p1[1] - t1[1]), 3)
             self.assertLessEqual(abs(w.p2[0] - t2[0]), 8)
             self.assertLessEqual(abs(w.p2[1] - t2[1]), 3)
+
+    def test_slope_wire_is_measured_and_a_step_is_not(self):
+        a = Product(wire_width_px=2.5, corridor_px=7, end_tol_px=30, gap_max_px=40, z_ball=0).params()
+        h, w, y0 = 48, 90, 24
+        yy = np.arange(h, dtype=np.float32)[:, None]
+        ramp = 70 + 5.0 * (yy - y0) * np.ones((1, w), np.float32)
+        ramp[y0, 12:78] -= 16
+        ramp[y0 - 1, 12:78] -= 7
+        ramp[y0 + 1, 12:78] -= 7
+        step = np.where(yy >= y0, 190.0, 70.0).astype(np.float32) * np.ones((1, w), np.float32)
+        rng = np.random.default_rng(1)
+        def run(img):
+            noisy = np.clip(np.round(img + rng.normal(0, 3, img.shape)), 0, 255).astype(np.uint8)
+            return inspect_wire(prepare(noisy, True), (12, y0), (77, y0), a)
+        wire, edge = run(ramp), run(step)
+        self.assertNotIn('MISSING', wire['flags'], wire['z_all'])
+        self.assertIn('MISSING', edge['flags'], edge['z_all'])
 
 
 class StoreTests(unittest.TestCase):

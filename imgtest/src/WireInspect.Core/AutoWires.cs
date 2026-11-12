@@ -14,31 +14,26 @@ public static class AutoWires
         using var img = new Mat();
         Cv2.GaussianBlur(f, img, new Size(0, 0), 0.7);
 
-        int len = Math.Max(9, a.Along * 3);
+        int len = Math.Max(9, a.Along + 4);   // a long kernel averages a short wire into the die and the lead
         const double zThr = 2.0;   // loose: every candidate is checked again by Inspector.InspectWire below
         using var resp = new Mat(img.Size(), MatType.CV_32F, Scalar.All(float.MinValue));
-        // a wire is darker than BOTH sides and its two sides look alike; a frame edge (dark rim between
-        // bright metal and dark background) is not symmetric, so |side+ - side-| is subtracted
+        // darker than both sides. A wire between the die and a lead is darker than both sides but the two
+        // sides are not equally bright, so only part of that difference is removed; a one-sided lead edge
+        // still goes negative.
         for (int deg = 0; deg < 180; deg += 15)
         {
             double th = deg * Math.PI / 180;
             using var kc = LineKernel(th, len, 0);
             using var kp = LineKernel(th, len, a.D);
             using var km = LineKernel(th, len, -a.D);
-            using var kp3 = LineKernel(th, len, 3 * a.D);
-            using var km3 = LineKernel(th, len, -3 * a.D);
-            using Mat c = new(), sp = new(), sm = new(), sp3 = new(), sm3 = new(), lo = new(), diff = new(), r = new();
+            using Mat c = new(), sp = new(), sm = new(), lo = new(), diff = new(), r = new();
             Cv2.Filter2D(img, c, MatType.CV_32F, kc);
             Cv2.Filter2D(img, sp, MatType.CV_32F, kp);
             Cv2.Filter2D(img, sm, MatType.CV_32F, km);
-            Cv2.Filter2D(img, sp3, MatType.CV_32F, kp3);
-            Cv2.Filter2D(img, sm3, MatType.CV_32F, km3);
             Cv2.Min(sp, sm, lo);
             Cv2.Subtract(lo, c, r);
             Cv2.Absdiff(sp, sm, diff);
-            Cv2.ScaleAdd(diff, -1.0, r, r);
-            Cv2.Absdiff(sp3, sm3, diff);
-            Cv2.ScaleAdd(diff, -0.5, r, r);
+            Cv2.ScaleAdd(diff, -0.35, r, r);
             Cv2.Max(resp, r, resp);
         }
         int margin = len / 2 + 3 * a.D + 1;   // filter responses near the template border are not reliable
@@ -60,11 +55,13 @@ public static class AutoWires
         Cv2.Threshold(z, mask, zThr, 255, ThresholdTypes.Binary);
         mask.ConvertTo(mask, MatType.CV_8U);
 
-        double minLen = Math.Max(12, 0.15 * Math.Min(tpl8.Width, tpl8.Height));
+        // the box often includes the long lead fingers, which are longer than the bond wire
+        double minLen = Math.Max(12, Math.Min(0.15 * Math.Min(tpl8.Width, tpl8.Height), 8 * p.WireWidthPx));
         var segs = Cv2.HoughLinesP(mask, 1, Math.PI / 180, (int)Math.Max(10, minLen / 2), minLen, Math.Max(3, a.Along))
             .Select(s => (x1: (double)s.P1.X, y1: (double)s.P1.Y, x2: (double)s.P2.X, y2: (double)s.P2.Y)).ToList();
         var merged = Merge(segs, Math.Max(3, 2 * p.WireWidthPx), Math.Max(6, 2 * a.Along))
-            .Where(s => Math.Sqrt(Math.Pow(s.x2 - s.x1, 2) + Math.Pow(s.y2 - s.y1, 2)) >= minLen).ToList();
+            .Where(s => Math.Sqrt(Math.Pow(s.x2 - s.x1, 2) + Math.Pow(s.y2 - s.y1, 2)) >= minLen && ThinDip(img, s, a.D))
+            .ToList();
 
         var fimg = FImage.FromMat(img);
         var kept = new List<(double x1, double y1, double x2, double y2)>();
@@ -92,6 +89,30 @@ public static class AutoWires
             outList.Add(w);
         }
         return outList.OrderBy(w => Math.Round((w.P1[1] + w.P2[1]) / 2 / 10)).ThenBy(w => (w.P1[0] + w.P2[0]) / 2).Take(64).ToList();
+    }
+
+    /// <summary>The segment crosses a narrow dark dip, not the edge of a wide lead.
+    /// Both the near pair and the pair one wire-width further out are brighter than the center.</summary>
+    static bool ThinDip(Mat img, (double x1, double y1, double x2, double y2) s, int d)
+    {
+        double l = SegLen(s), nx = -(s.y2 - s.y1) / l, ny = (s.x2 - s.x1) / l;
+        double mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
+        float At(double cx, double cy, int k)
+        {
+            int x = Math.Clamp((int)Math.Round(cx + nx * k), 0, img.Width - 1);
+            int y = Math.Clamp((int)Math.Round(cy + ny * k), 0, img.Height - 1);
+            return img.At<float>(y, x);
+        }
+        // the Hough line can sit a pixel off the ridge; take the darkest of a few shifts
+        for (int shift = -2; shift <= 2; shift++)
+        {
+            double cx = mx + nx * shift, cy = my + ny * shift;
+            float mid = At(cx, cy, 0);
+            float near = Math.Min(At(cx, cy, -d), At(cx, cy, d)) - mid;
+            float far = Math.Min(At(cx, cy, -2 * d), At(cx, cy, 2 * d)) - mid;
+            if (near > 4 && far > 4) return true;
+        }
+        return false;
     }
 
     /// <summary>Strongest ball within 12 px inward/outward of an end, searched along the wire.</summary>

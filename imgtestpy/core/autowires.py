@@ -84,6 +84,33 @@ def _line_kernel(theta, length, off):
     return k.astype(np.float32)
 
 
+def _thin_dip(img, s, d):
+    """The segment crosses a narrow dark dip, not the edge of a wide lead.
+
+    Both the near pair and the pair one wire-width further out are brighter than the center.
+    A lead edge is bright on one side only, so it fails."""
+    l = _seg_len(s)
+    nx, ny = -(s[3] - s[1]) / l, (s[2] - s[0]) / l
+    mx, my = (s[0] + s[2]) / 2.0, (s[1] + s[3]) / 2.0
+    h, w = img.shape
+
+    def at(cx, cy, k):
+        x = int(min(max(round(cx + nx * k), 0), w - 1))
+        y = int(min(max(round(cy + ny * k), 0), h - 1))
+        return float(img[y, x])
+
+    # the Hough line can sit a pixel off the ridge; take the darkest of a few shifts
+    best = -1e9
+    for shift in range(-2, 3):
+        cx, cy = mx + nx * shift, my + ny * shift
+        mid = at(cx, cy, 0)
+        near = min(at(cx, cy, -d), at(cx, cy, d)) - mid
+        far = min(at(cx, cy, -2 * d), at(cx, cy, 2 * d)) - mid
+        if near > 4 and far > 4:
+            best = max(best, near)
+    return best > 4
+
+
 def _best_ball(img, x, y, ox, oy):
     """Strongest ball within 12 px inward/outward of an end, searched along the wire."""
     l = max(1e-6, math.hypot(ox - x, oy - y))
@@ -141,19 +168,17 @@ def auto_wires(tpl8, product):
         f = 255 - f
     img = cv2.GaussianBlur(f, (0, 0), 0.7)
 
-    length = max(9, a.along * 3)
+    length = max(9, a.along + 4)   # a long kernel averages a short wire into the die and the lead
     z_thr = 2.0   # loose: every candidate is checked again by inspect_wire below
     lowest = np.finfo(np.float32).min
     resp = np.full(img.shape, lowest, np.float32)
-    # a wire is darker than BOTH sides and its two sides look alike; a frame edge (dark rim between bright
-    # metal and dark background) is not symmetric, so |side+ - side-| is subtracted
+    # darker than both sides. A wire between the die and a lead is darker than both sides but the two
+    # sides are not equally bright, so only part of that difference is removed; a one-sided lead edge
+    # still goes negative.
     for deg in range(0, 180, 15):
         th = math.radians(deg)
-        c, sp, sm, sp3, sm3 = (cv2.filter2D(img, cv2.CV_32F, _line_kernel(th, length, o))
-                               for o in (0, a.d, -a.d, 3 * a.d, -3 * a.d))
-        r = np.minimum(sp, sm) - c
-        r = r - np.abs(sp - sm)
-        r = r - 0.5 * np.abs(sp3 - sm3)
+        c, sp, sm = (cv2.filter2D(img, cv2.CV_32F, _line_kernel(th, length, o)) for o in (0, a.d, -a.d))
+        r = np.minimum(sp, sm) - c - 0.35 * np.abs(sp - sm)
         resp = np.maximum(resp, r)
     margin = length // 2 + 3 * a.d + 1   # filter responses near the template border are not reliable
     H, W = resp.shape
@@ -167,12 +192,14 @@ def auto_wires(tpl8, product):
     z = (resp.astype(np.float32) - np.float32(med)) * np.float32(1 / mad)
     mask = (z > z_thr).astype(np.uint8) * 255
 
-    min_len = max(12, 0.15 * min(tpl8.shape[1], tpl8.shape[0]))
+    # the box often includes the long lead fingers, which are longer than the bond wire
+    min_len = max(12.0, min(0.15 * min(tpl8.shape[1], tpl8.shape[0]), 8 * product.wire_width_px))
     lines = cv2.HoughLinesP(mask, 1, math.pi / 180, int(max(10, min_len / 2)), minLineLength=min_len,
                             maxLineGap=max(3, a.along))
     segs = [tuple(float(v) for v in l) for l in lines.reshape(-1, 4)] if lines is not None else []
     wire_px = product.wire_width_px
-    merged = [s for s in _merge(segs, max(3, 2 * wire_px), max(6, 2 * a.along)) if _seg_len(s) >= min_len]
+    merged = [s for s in _merge(segs, max(3, 2 * wire_px), max(6, 2 * a.along))
+              if _seg_len(s) >= min_len and _thin_dip(img, s, a.d)]
 
     fimg = FImage(img)
     kept = []
